@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AddProductDialog } from "@/components/dashboard/AddProductDialog";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { StockStatusChart } from "@/components/dashboard/StockStatusChart";
 import { TopProductsChart } from "@/components/dashboard/TopProductsChart";
@@ -79,9 +80,12 @@ export default async function Home() {
             متابعة مستويات الأصناف والكميات المتاحة في مخازنك.
           </p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-2 text-xs text-emerald-300">
-          <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]" />
-          بيانات المخزون مباشرة
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-2 text-xs text-emerald-300">
+            <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]" />
+            بيانات المخزون مباشرة
+          </div>
+          <AddProductDialog />
         </div>
       </section>
 
