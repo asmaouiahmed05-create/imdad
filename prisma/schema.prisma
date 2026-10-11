@@ -19,4 +19,23 @@ model Product {
   minQuantity Float    @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  movements   StockMovement[]
+}
+
+enum MovementType {
+  IN
+  OUT
+}
+
+model StockMovement {
+  id        String       @id @default(cuid())
+  type      MovementType
+  quantity  Float
+  reason    String?
+  reference String?
+  createdAt DateTime     @default(now())
+  productId String
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
 }
