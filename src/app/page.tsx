@@ -15,7 +15,8 @@ import { StockStatusChart } from "@/components/dashboard/StockStatusChart";
 import { TopProductsChart } from "@/components/dashboard/TopProductsChart";
 import type { StockStatusDatum, WarehouseProduct } from "@/components/dashboard/types";
 import { prisma } from "@/lib/db";
-
+   import { RecordMovementButton } from "@/components/dashboard/RecordMovementButton";
+   import { RecentMovementsCard } from "@/components/dashboard/RecentMovementsCard";
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
   maximumFractionDigits: 2,
 });
@@ -85,7 +86,10 @@ export default async function Home() {
             <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]" />
             بيانات المخزون مباشرة
           </div>
-          <AddProductDialog />
+             <div className="flex items-center gap-2">
+     <RecordMovementButton />
+     <AddProductDialog />
+   </div>
         </div>
       </section>
 
@@ -187,6 +191,7 @@ export default async function Home() {
           </TableBody>
         </Table>
       </section>
+         <RecentMovementsCard />
     </main>
   );
 }
