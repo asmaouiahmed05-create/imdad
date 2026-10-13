@@ -75,3 +75,65 @@ export async function recordMovement(
     return { ok: false, error: "تعذر حفظ الحركة، حاول مرة أخرى" };
   }
 }
+function prismaErrorCode(e: unknown): string | undefined {
+  if (typeof e === "object" && e !== null && "code" in e) {
+    const code = (e as { code?: unknown }).code;
+    return typeof code === "string" ? code : undefined;
+  }
+  return undefined;
+}
+
+export async function updateProduct(
+  formData: FormData
+): Promise<{ ok: boolean; error?: string }> {
+  const id = String(formData.get("id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const sku = String(formData.get("sku") ?? "").trim();
+  const unit = String(formData.get("unit") ?? "").trim();
+  const minQuantity = parseFloat(String(formData.get("minQuantity") ?? ""));
+
+  if (!id) return { ok: false, error: "المنتج غير محدد" };
+  if (!name || !sku || !unit) {
+    return { ok: false, error: "الاسم والرمز والوحدة حقول مطلوبة" };
+  }
+  if (!Number.isFinite(minQuantity) || minQuantity < 0) {
+    return { ok: false, error: "حد التنبيه يجب أن يكون صفرًا أو أكثر" };
+  }
+
+  try {
+    await prisma.product.update({
+      where: { id },
+      data: { name, sku, unit, minQuantity },
+    });
+  } catch (e) {
+    if (prismaErrorCode(e) === "P2002") {
+      return { ok: false, error: "هذا الرمز (SKU) مستخدم لمنتج آخر" };
+    }
+    return { ok: false, error: "تعذّر حفظ التعديلات، حاول مرة أخرى" };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function deleteProduct(
+  id: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!id) return { ok: false, error: "المنتج غير محدد" };
+
+  try {
+    const movements = await prisma.stockMovement.count({ where: { productId: id } });
+    if (movements > 0) {
+      return { ok: false, error: "لا يمكن حذف منتج له حركات مخزون مسجّلة" };
+    }
+    await prisma.product.delete({ where: { id } });
+  } catch (e) {
+    if (prismaErrorCode(e) === "P2003") {
+      return { ok: false, error: "لا يمكن حذف منتج له حركات مخزون مسجّلة" };
+    }
+    return { ok: false, error: "تعذّر حذف المنتج، حاول مرة أخرى" };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
