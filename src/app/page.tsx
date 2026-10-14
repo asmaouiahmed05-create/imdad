@@ -10,13 +10,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AddProductDialog } from "@/components/dashboard/AddProductDialog";
+import { ProductActions } from "@/components/dashboard/ProductActions";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { StockStatusChart } from "@/components/dashboard/StockStatusChart";
 import { TopProductsChart } from "@/components/dashboard/TopProductsChart";
 import type { StockStatusDatum, WarehouseProduct } from "@/components/dashboard/types";
 import { prisma } from "@/lib/db";
-   import { RecordMovementButton } from "@/components/dashboard/RecordMovementButton";
-   import { RecentMovementsCard } from "@/components/dashboard/RecentMovementsCard";
+import { RecordMovementButton } from "@/components/dashboard/RecordMovementButton";
+import { RecentMovementsCard } from "@/components/dashboard/RecentMovementsCard";
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
   maximumFractionDigits: 2,
 });
@@ -86,10 +87,10 @@ export default async function Home() {
             <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]" />
             بيانات المخزون مباشرة
           </div>
-             <div className="flex items-center gap-2">
-     <RecordMovementButton />
-     <AddProductDialog />
-   </div>
+          <div className="flex items-center gap-2">
+            <RecordMovementButton />
+            <AddProductDialog />
+          </div>
         </div>
       </section>
 
@@ -171,13 +172,16 @@ export default async function Home() {
               <TableHead className="pe-5 text-start text-xs font-medium text-slate-400 sm:pe-6">
                 الحالة
               </TableHead>
+              <TableHead className="text-end text-xs font-medium text-slate-400">
+                إجراءات
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {products.length === 0 ? (
               <TableRow className="border-white/[0.06] hover:bg-transparent">
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="h-36 text-center text-sm text-slate-400"
                 >
                   لا توجد عناصر بعد
@@ -191,7 +195,7 @@ export default async function Home() {
           </TableBody>
         </Table>
       </section>
-         <RecentMovementsCard />
+        <RecentMovementsCard />
     </main>
   );
 }
@@ -235,6 +239,17 @@ function ProductTableRow({ product }: { product: WarehouseProduct }) {
         >
           {status.label}
         </Badge>
+      </TableCell>
+      <TableCell className="text-end">
+        <ProductActions
+          product={{
+            id: product.id,
+            name: product.name,
+            sku: product.sku,
+            unit: product.unit,
+            minQuantity: product.minQuantity,
+          }}
+        />
       </TableCell>
     </TableRow>
   );

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,11 +25,21 @@ export type ProductActionsProduct = {
 };
 
 function EditProductDialog({ product }: { product: ProductActionsProduct }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  async function handleSubmit(formData: FormData) {
+  useEffect(() => {
+    if (!success) return;
+    const timeout = window.setTimeout(() => setSuccess(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [success]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
     setLoading(true);
     setError(null);
     try {
@@ -38,6 +49,10 @@ function EditProductDialog({ product }: { product: ProductActionsProduct }) {
         return;
       }
       setOpen(false);
+      setSuccess("تم حفظ تعديلات المنتج بنجاح");
+      router.refresh();
+    } catch {
+      setError("تعذّر الاتصال بالخادم، حاول مرة أخرى");
     } finally {
       setLoading(false);
     }
@@ -62,25 +77,45 @@ function EditProductDialog({ product }: { product: ProductActionsProduct }) {
         <DialogHeader>
           <DialogTitle>تعديل المنتج</DialogTitle>
         </DialogHeader>
-        <form action={handleSubmit} className="space-y-4">
-          <input type="hidden" name="id" value={product.id} />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            id={`edit-${product.id}-id`}
+            type="hidden"
+            name="id"
+            value={product.id}
+          />
           <div className="space-y-2">
-            <Label htmlFor="edit-name">الاسم</Label>
-            <Input id="edit-name" name="name" defaultValue={product.name} required />
+            <Label htmlFor={`edit-${product.id}-name`}>الاسم</Label>
+            <Input
+              id={`edit-${product.id}-name`}
+              name="name"
+              defaultValue={product.name}
+              required
+            />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-sku">الرمز (SKU)</Label>
-            <Input id="edit-sku" name="sku" defaultValue={product.sku} required />
+            <Label htmlFor={`edit-${product.id}-sku`}>الرمز (SKU)</Label>
+            <Input
+              id={`edit-${product.id}-sku`}
+              name="sku"
+              defaultValue={product.sku}
+              required
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-unit">الوحدة</Label>
-              <Input id="edit-unit" name="unit" defaultValue={product.unit} required />
+              <Label htmlFor={`edit-${product.id}-unit`}>الوحدة</Label>
+              <Input
+                id={`edit-${product.id}-unit`}
+                name="unit"
+                defaultValue={product.unit}
+                required
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-min">حد التنبيه الأدنى</Label>
+              <Label htmlFor={`edit-${product.id}-min`}>حد التنبيه الأدنى</Label>
               <Input
-                id="edit-min"
+                id={`edit-${product.id}-min`}
                 name="minQuantity"
                 type="number"
                 step="any"
@@ -100,6 +135,15 @@ function EditProductDialog({ product }: { product: ProductActionsProduct }) {
           </DialogFooter>
         </form>
       </DialogContent>
+      {success && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="fixed end-4 top-4 z-50 rounded-md border border-emerald-500/30 bg-slate-900 px-4 py-3 text-sm text-emerald-300 shadow-lg"
+        >
+          {success}
+        </p>
+      )}
     </Dialog>
   );
 }

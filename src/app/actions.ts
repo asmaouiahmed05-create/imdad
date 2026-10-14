@@ -3,22 +3,33 @@
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
-export async function createProduct(formData: FormData) {
-  const name = formData.get("name") as string;
-  const sku = formData.get("sku") as string;
-  const unit = formData.get("unit") as string;
-  const quantity = parseFloat(formData.get("quantity") as string) || 0;
-  const minQuantity = parseFloat(formData.get("minQuantity") as string) || 0;
+export async function createProduct(
+  formData: FormData
+): Promise<{ ok: boolean; error?: string }> {
+  const name = String(formData.get("name") ?? "").trim();
+  const sku = String(formData.get("sku") ?? "").trim();
+  const unit = String(formData.get("unit") ?? "").trim();
+  const quantity = parseFloat(String(formData.get("quantity") ?? "")) || 0;
+  const minQuantity = parseFloat(String(formData.get("minQuantity") ?? "")) || 0;
 
   if (!name || !sku || !unit) {
-    throw new Error("الاسم والرمز والوحدة حقول مطلوبة");
+    return { ok: false, error: "الاسم والرمز والوحدة حقول مطلوبة" };
   }
 
-  await prisma.product.create({
-    data: { name, sku, unit, quantity, minQuantity },
-  });
+  try {
+    await prisma.product.create({
+      data: { name, sku, unit, quantity, minQuantity },
+    });
 
-  revalidatePath("/");
+    revalidatePath("/");
+    return { ok: true };
+  } catch (e) {
+    if (prismaErrorCode(e) === "P2002") {
+      return { ok: false, error: "هذا الرمز (SKU) مستخدم لمنتج آخر" };
+    }
+    console.error("Failed to create product", e);
+    return { ok: false, error: "تعذّر إضافة المنتج، حاول مرة أخرى" };
+  }
 }
 class MovementError extends Error {}
 
@@ -86,34 +97,53 @@ function prismaErrorCode(e: unknown): string | undefined {
 export async function updateProduct(
   formData: FormData
 ): Promise<{ ok: boolean; error?: string }> {
-  const id = String(formData.get("id") ?? "");
+  const id = String(formData.get("id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const sku = String(formData.get("sku") ?? "").trim();
   const unit = String(formData.get("unit") ?? "").trim();
-  const minQuantity = parseFloat(String(formData.get("minQuantity") ?? ""));
+  const minQuantityValue = String(formData.get("minQuantity") ?? "").trim();
+  const minQuantity =
+    minQuantityValue === "" ? undefined : Number(minQuantityValue);
 
   if (!id) return { ok: false, error: "المنتج غير محدد" };
   if (!name || !sku || !unit) {
     return { ok: false, error: "الاسم والرمز والوحدة حقول مطلوبة" };
   }
-  if (!Number.isFinite(minQuantity) || minQuantity < 0) {
+  if (minQuantity !== undefined && (!Number.isFinite(minQuantity) || minQuantity < 0)) {
     return { ok: false, error: "حد التنبيه يجب أن يكون صفرًا أو أكثر" };
   }
 
   try {
-    await prisma.product.update({
-      where: { id },
-      data: { name, sku, unit, minQuantity },
+    const productWithSku = await prisma.product.findFirst({
+      where: { sku, id: { not: id } },
+      select: { id: true },
     });
-  } catch (e) {
-    if (prismaErrorCode(e) === "P2002") {
+    if (productWithSku) {
       return { ok: false, error: "هذا الرمز (SKU) مستخدم لمنتج آخر" };
     }
+
+    await prisma.product.update({
+      where: { id },
+      data: {
+        name,
+        sku,
+        unit,
+        ...(minQuantity !== undefined ? { minQuantity } : {}),
+      },
+    });
+    revalidatePath("/");
+    return { ok: true };
+  } catch (e) {
+    const errorCode = prismaErrorCode(e);
+    if (errorCode === "P2002") {
+      return { ok: false, error: "هذا الرمز (SKU) مستخدم لمنتج آخر" };
+    }
+    if (errorCode === "P2025") {
+      return { ok: false, error: "المنتج غير موجود أو تم حذفه" };
+    }
+    console.error("Failed to update product", e);
     return { ok: false, error: "تعذّر حفظ التعديلات، حاول مرة أخرى" };
   }
-
-  revalidatePath("/");
-  return { ok: true };
 }
 
 export async function deleteProduct(
@@ -127,6 +157,8 @@ export async function deleteProduct(
       return { ok: false, error: "لا يمكن حذف منتج له حركات مخزون مسجّلة" };
     }
     await prisma.product.delete({ where: { id } });
+    revalidatePath("/");
+    return { ok: true };
   } catch (e) {
     if (prismaErrorCode(e) === "P2003") {
       return { ok: false, error: "لا يمكن حذف منتج له حركات مخزون مسجّلة" };
@@ -134,6 +166,4 @@ export async function deleteProduct(
     return { ok: false, error: "تعذّر حذف المنتج، حاول مرة أخرى" };
   }
 
-  revalidatePath("/");
-  return { ok: true };
 }
