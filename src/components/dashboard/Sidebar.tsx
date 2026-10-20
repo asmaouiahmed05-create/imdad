@@ -1,13 +1,27 @@
+"use client";
+
 import Link from "next/link";
-import { Boxes, Factory, Truck, Warehouse } from "lucide-react";
+import { usePathname } from "next/navigation";
+import {
+  Boxes,
+  Factory,
+  FileSpreadsheet,
+  ShoppingCart,
+  Truck,
+  Warehouse,
+} from "lucide-react";
 
 const navItems = [
-  { label: "المخازن", icon: Warehouse, active: true },
-  { label: "الإنتاج", icon: Factory, active: false },
-  { label: "سلاسل الإمداد", icon: Truck, active: false },
+  { label: "المخازن", icon: Warehouse, href: "/" },
+  { label: "التقارير", icon: FileSpreadsheet, href: "/reports" },
+  { label: "الموردون", icon: Truck, href: "/suppliers" },
+  { label: "أوامر الشراء", icon: ShoppingCart, href: "/purchase-orders" },
+  { label: "الإنتاج", icon: Factory },
 ];
 
 export function Sidebar() {
+  const pathname = usePathname();
+
   return (
     <aside className="border-b border-white/[0.07] bg-slate-900/90 px-4 py-4 md:sticky md:top-0 md:flex md:h-screen md:w-64 md:shrink-0 md:flex-col md:border-b-0 md:border-e md:px-5 md:py-6">
       <div className="flex items-center gap-3 px-1">
@@ -29,13 +43,20 @@ export function Sidebar() {
         aria-label="القائمة الرئيسية"
         className="mt-4 flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0"
       >
-        {navItems.map(({ label, icon: Icon, active }) =>
-          active ? (
+        {navItems.map(({ label, icon: Icon, href }) => {
+          const active = href === "/"
+            ? pathname === "/"
+            : Boolean(href && (pathname === href || pathname.startsWith(`${href}/`)));
+          return href ? (
             <Link
               key={label}
-              href="/"
-              aria-current="page"
-              className="flex min-h-11 shrink-0 items-center gap-3 rounded-xl bg-sky-500 px-3.5 text-sm font-semibold text-white shadow-lg shadow-sky-950/30 md:w-full"
+              href={href}
+              aria-current={active ? "page" : undefined}
+              className={`flex min-h-11 shrink-0 items-center gap-3 rounded-xl px-3.5 text-sm transition md:w-full ${
+                active
+                  ? "bg-sky-500 font-semibold text-white shadow-lg shadow-sky-950/30"
+                  : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
+              }`}
             >
               <Icon aria-hidden="true" className="size-[18px]" />
               <span>{label}</span>
@@ -52,8 +73,8 @@ export function Sidebar() {
                 قريبًا
               </span>
             </div>
-          ),
-        )}
+          );
+        })}
       </nav>
 
       <div className="mt-8 hidden rounded-2xl border border-sky-400/10 bg-gradient-to-br from-sky-400/[0.08] to-indigo-400/[0.03] p-4 md:block">

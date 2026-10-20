@@ -1,6 +1,7 @@
-import { Bell, Search, Settings2 } from "lucide-react";
+import { Suspense } from "react";
+import { Bell, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ProductSearch } from "@/components/dashboard/ProductSearch";
 
 export function Topbar() {
   return (
@@ -14,18 +15,16 @@ export function Topbar() {
         </div>
 
         <div className="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
-          <label className="relative min-w-0 flex-1 sm:w-56 lg:w-72">
-            <span className="sr-only">ابحث عن صنف</span>
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
-            />
-            <Input
-              type="search"
-              placeholder="ابحث عن صنف..."
-              className="h-10 rounded-xl border-white/[0.08] bg-slate-900/80 ps-10 pe-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:border-sky-400/40 focus-visible:ring-sky-400/15"
-            />
-          </label>
+          <Suspense
+            fallback={
+              <div
+                aria-hidden="true"
+                className="h-10 w-full rounded-xl border border-white/[0.08] bg-slate-900/80 sm:w-56 lg:w-72"
+              />
+            }
+          >
+            <ProductSearch />
+          </Suspense>
           <Button
             type="button"
             variant="outline"

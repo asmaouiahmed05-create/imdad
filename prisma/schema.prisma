@@ -10,16 +10,18 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
 model Product {
-  id          String   @id @default(cuid())
-  name        String
-  sku         String   @unique
-  unit        String
-  quantity    Float    @default(0)
-  minQuantity Float    @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  movements   StockMovement[]
+  id                 String              @id @default(cuid())
+  name               String
+  sku                String              @unique
+  unit               String
+  quantity           Float               @default(0)
+  minQuantity        Float               @default(0)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  movements          StockMovement[]
+  purchaseOrderLines PurchaseOrderLine[]
 }
 
 enum MovementType {
@@ -28,14 +30,94 @@ enum MovementType {
 }
 
 model StockMovement {
-  id        String       @id @default(cuid())
-  type      MovementType
-  quantity  Float
-  reason    String?
-  reference String?
-  createdAt DateTime     @default(now())
-  productId String
-  product   Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  id                  String                @id @default(cuid())
+  type                MovementType
+  quantity            Float
+  reason              String?
+  reference           String?
+  createdAt           DateTime              @default(now())
+  productId           String
+  product             Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  purchaseOrderLineId String?
+  purchaseOrderLine   PurchaseOrderLine?    @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+  receiptId           String?
+  receipt             PurchaseOrderReceipt? @relation(fields: [receiptId], references: [id], onDelete: Restrict)
 
   @@index([productId])
+  @@index([purchaseOrderLineId])
+  @@index([receiptId])
+}
+
+model Supplier {
+  id             String          @id @default(cuid())
+  name           String
+  nameKey        String          @unique
+  contactPerson  String?
+  phone          String?
+  email          String?
+  address        String?
+  notes          String?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  purchaseOrders PurchaseOrder[]
+
+  @@index([name])
+  @@index([isActive, name])
+}
+
+model PurchaseOrder {
+  id          String                 @id @default(cuid())
+  orderNumber String                 @unique
+  status      PurchaseOrderStatus    @default(DRAFT)
+  supplierId  String
+  supplier    Supplier               @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  lines       PurchaseOrderLine[]
+  receipts    PurchaseOrderReceipt[]
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  submittedAt DateTime?
+  receivedAt  DateTime?
+  cancelledAt DateTime?
+
+  @@index([supplierId, createdAt])
+  @@index([status, createdAt])
+}
+
+model PurchaseOrderReceipt {
+  id              String          @id @default(cuid())
+  idempotencyKey  String          @unique
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  movements       StockMovement[]
+  createdAt       DateTime        @default(now())
+
+  @@index([purchaseOrderId, createdAt])
+}
+
+model PurchaseOrderLine {
+  id               String          @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  productId        String
+  product          Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName      String
+  productSku       String
+  unit             String
+  orderedQuantity  Float
+  receivedQuantity Float           @default(0)
+  movements        StockMovement[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([purchaseOrderId, productId])
+  @@index([productId])
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
 }

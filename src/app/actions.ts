@@ -152,16 +152,25 @@ export async function deleteProduct(
   if (!id) return { ok: false, error: "المنتج غير محدد" };
 
   try {
-    const movements = await prisma.stockMovement.count({ where: { productId: id } });
-    if (movements > 0) {
-      return { ok: false, error: "لا يمكن حذف منتج له حركات مخزون مسجّلة" };
+    const [movements, purchaseOrderLines] = await Promise.all([
+      prisma.stockMovement.count({ where: { productId: id } }),
+      prisma.purchaseOrderLine.count({ where: { productId: id } }),
+    ]);
+    if (movements > 0 || purchaseOrderLines > 0) {
+      return {
+        ok: false,
+        error: "لا يمكن حذف منتج مرتبط بحركات مخزون أو أوامر شراء مسجّلة",
+      };
     }
     await prisma.product.delete({ where: { id } });
     revalidatePath("/");
     return { ok: true };
   } catch (e) {
     if (prismaErrorCode(e) === "P2003") {
-      return { ok: false, error: "لا يمكن حذف منتج له حركات مخزون مسجّلة" };
+      return {
+        ok: false,
+        error: "لا يمكن حذف منتج مرتبط بحركات مخزون أو أوامر شراء مسجّلة",
+      };
     }
     return { ok: false, error: "تعذّر حذف المنتج، حاول مرة أخرى" };
   }
