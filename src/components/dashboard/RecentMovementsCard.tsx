@@ -19,7 +19,15 @@ export async function RecentMovementsCard() {
   const movements = await prisma.stockMovement.findMany({
     orderBy: { createdAt: "desc" },
     take: 10,
-    include: { product: { select: { name: true, unit: true } } },
+    select: {
+      id: true,
+      type: true,
+      quantity: true,
+      reason: true,
+      reference: true,
+      createdAt: true,
+      product: { select: { name: true, unit: true } },
+    },
   });
 
   return (
