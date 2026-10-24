@@ -3,12 +3,14 @@ import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { PurchaseOrderForm } from "@/components/purchasing/PurchaseOrderForm";
 import { prisma } from "@/lib/db";
+import { requirePagePermission } from "@/lib/authz";
 
 export default async function NewPurchaseOrderPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requirePagePermission("purchase_order.create");
   await connection();
   const params = await searchParams;
   const rawSupplierId = params.supplierId;

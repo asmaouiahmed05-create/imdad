@@ -9,6 +9,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createProduct } from "@/app/actions";
+import {
+  MAX_INVENTORY_DECIMAL_PLACES,
+  MAX_INVENTORY_QUANTITY,
+} from "@/lib/inventory-quantity";
+
+const quantityStep = 10 ** -MAX_INVENTORY_DECIMAL_PLACES;
 
 export function AddProductDialog() {
   const [open, setOpen] = useState(false);
@@ -65,12 +71,30 @@ export function AddProductDialog() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="quantity">الكمية</Label>
-              <Input id="quantity" name="quantity" type="number" step="any" defaultValue={0} />
+              <Input
+                id="quantity"
+                name="quantity"
+                type="number"
+                min="0"
+                max={MAX_INVENTORY_QUANTITY}
+                step={quantityStep}
+                defaultValue={0}
+                required
+              />
             </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="minQuantity">حد التنبيه الأدنى</Label>
-            <Input id="minQuantity" name="minQuantity" type="number" step="any" defaultValue={0} />
+            <Input
+              id="minQuantity"
+              name="minQuantity"
+              type="number"
+              min="0"
+              max={MAX_INVENTORY_QUANTITY}
+              step={quantityStep}
+              defaultValue={0}
+              required
+            />
           </div>
           {error && (
             <p role="alert" className="text-sm text-destructive">

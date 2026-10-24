@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { receivePurchaseOrder } from "@/app/purchasing-actions";
+import {
+  MAX_INVENTORY_DECIMAL_PLACES,
+  MAX_INVENTORY_QUANTITY,
+} from "@/lib/inventory-quantity";
 
 export type ReceiptFormLine = {
   id: string;
@@ -17,6 +21,8 @@ export type ReceiptFormLine = {
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
   maximumFractionDigits: 4,
 });
+
+const quantityStep = 10 ** -MAX_INVENTORY_DECIMAL_PLACES;
 
 export function PurchaseOrderReceiptForm({
   id,
@@ -77,9 +83,9 @@ export function PurchaseOrderReceiptForm({
                 <Input
                   name={`receipt-${line.id}`}
                   type="number"
-                  min="0"
-                  max={remaining}
-                  step="any"
+                  min={quantityStep}
+                  max={Math.min(remaining, MAX_INVENTORY_QUANTITY)}
+                  step={quantityStep}
                   inputMode="decimal"
                   aria-label={`كمية الاستلام للصنف ${line.productName}`}
                   disabled={isPending}

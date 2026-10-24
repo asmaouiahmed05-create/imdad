@@ -92,8 +92,8 @@ export function Sidebar() {
           م
         </div>
         <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-slate-200">مدير المخازن</p>
-          <p className="mt-0.5 truncate text-[11px] text-slate-500">مسؤول النظام</p>
+          <p className="truncate text-xs font-medium text-slate-200">مستخدم النظام</p>
+          <p className="mt-0.5 truncate text-[11px] text-slate-500">جلسة مصادقة</p>
         </div>
       </div>
     </aside>

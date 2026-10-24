@@ -3,18 +3,19 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
-  calculateReceipt,
-  derivePurchaseOrderStatus,
   parsePositiveQuantity,
 } from "@/lib/purchase-order-state";
+import {
+  PurchasingError,
+  recordPurchaseOrderReceipt,
+} from "@/lib/purchase-order-receiving";
 import { revalidatePath } from "next/cache";
+import { requirePermission } from "@/lib/authz";
 
 type ActionResult = { ok: boolean; error?: string; id?: string };
 type OrderLineInput = { productId: string; quantity: number };
 type TransactionClient = Prisma.TransactionClient;
 const MAX_ORDER_LINES = 100;
-
-class PurchasingError extends Error {}
 
 function field(formData: FormData, name: string) {
   return String(formData.get(name) ?? "").trim();
@@ -111,11 +112,15 @@ function revalidatePurchasing(orderId?: string) {
 
 function actionError(error: unknown, fallback: string): ActionResult {
   if (error instanceof PurchasingError) return { ok: false, error: error.message };
-  console.error("Purchasing operation failed", error);
+  console.error("Purchasing operation failed", {
+    code: prismaErrorCode(error),
+  });
   return { ok: false, error: fallback };
 }
 
 export async function createSupplier(formData: FormData): Promise<ActionResult> {
+  await requirePermission("supplier.manage");
+
   try {
     const supplier = supplierFields(formData);
     const created = await prisma.supplier.create({ data: supplier });
@@ -130,6 +135,8 @@ export async function createSupplier(formData: FormData): Promise<ActionResult> 
 }
 
 export async function updateSupplier(formData: FormData): Promise<ActionResult> {
+  await requirePermission("supplier.manage");
+
   const id = field(formData, "id");
   if (!id) return { ok: false, error: "المورد غير محدد." };
 
@@ -206,6 +213,8 @@ function orderYear(date: Date) {
 export async function createPurchaseOrder(
   formData: FormData,
 ): Promise<ActionResult> {
+  await requirePermission("purchase_order.create");
+
   const supplierId = field(formData, "supplierId");
   if (!supplierId) return { ok: false, error: "اختر موردًا نشطًا." };
 
@@ -260,6 +269,8 @@ async function lockPurchaseOrder(
 export async function updatePurchaseOrder(
   formData: FormData,
 ): Promise<ActionResult> {
+  await requirePermission("purchase_order.edit_draft");
+
   const id = field(formData, "id");
   const supplierId = field(formData, "supplierId");
   if (!id || !supplierId) {
@@ -294,6 +305,8 @@ export async function updatePurchaseOrder(
 export async function submitPurchaseOrder(
   formData: FormData,
 ): Promise<ActionResult> {
+  await requirePermission("purchase_order.submit");
+
   const id = field(formData, "id");
   if (!id) return { ok: false, error: "أمر الشراء غير محدد." };
 
@@ -323,6 +336,8 @@ export async function submitPurchaseOrder(
 export async function cancelPurchaseOrder(
   formData: FormData,
 ): Promise<ActionResult> {
+  await requirePermission("purchase_order.cancel");
+
   const id = field(formData, "id");
   if (!id) return { ok: false, error: "أمر الشراء غير محدد." };
 
@@ -350,6 +365,8 @@ export async function cancelPurchaseOrder(
 export async function receivePurchaseOrder(
   formData: FormData,
 ): Promise<ActionResult> {
+  await requirePermission("purchase_order.receive");
+
   const id = field(formData, "id");
   const receiptToken = field(formData, "receiptToken");
   if (!id) return { ok: false, error: "أمر الشراء غير محدد." };
@@ -383,66 +400,7 @@ export async function receivePurchaseOrder(
   try {
     await prisma.$transaction(async (tx) => {
       const order = await lockPurchaseOrder(tx, id);
-      if (
-        order.status !== "SUBMITTED" &&
-        order.status !== "PARTIALLY_RECEIVED"
-      ) {
-        throw new PurchasingError("لا يمكن الاستلام من أمر غير مرسل أو مكتمل.");
-      }
-      const receiptBatch = await tx.purchaseOrderReceipt.create({
-        data: { idempotencyKey: receiptToken, purchaseOrderId: id },
-        select: { id: true },
-      });
-
-      const linesById = new Map(order.lines.map((line) => [line.id, line]));
-      for (const [lineId, quantity] of requested) {
-        const line = linesById.get(lineId);
-        if (!line) throw new PurchasingError("أحد أصناف الاستلام لا يتبع هذا الأمر.");
-        const receipt = calculateReceipt(line, quantity);
-        if (!receipt) {
-          throw new PurchasingError(
-            `الكمية المطلوبة للصنف «${line.productName}» تتجاوز الكمية المتبقية.`,
-          );
-        }
-
-        const lineUpdate = await tx.purchaseOrderLine.updateMany({
-          where: { id: line.id, receivedQuantity: line.receivedQuantity },
-          data: { receivedQuantity: receipt.receivedQuantity },
-        });
-        if (lineUpdate.count !== 1) {
-          throw new PurchasingError("تغيرت بيانات الاستلام. حدّث الصفحة وحاول مرة أخرى.");
-        }
-
-        const productUpdate = await tx.product.updateMany({
-          where: { id: line.productId },
-          data: { quantity: { increment: receipt.quantity } },
-        });
-        if (productUpdate.count !== 1) {
-          throw new PurchasingError(`الصنف «${line.productName}» لم يعد موجودًا.`);
-        }
-
-        await tx.stockMovement.create({
-          data: {
-            productId: line.productId,
-            purchaseOrderLineId: line.id,
-            receiptId: receiptBatch.id,
-            type: "IN",
-            quantity: receipt.quantity,
-            reason: `استلام أمر شراء ${order.orderNumber}`,
-            reference: order.orderNumber,
-          },
-        });
-        line.receivedQuantity = receipt.receivedQuantity;
-      }
-
-      const status = derivePurchaseOrderStatus(order.lines);
-      await tx.purchaseOrder.update({
-        where: { id },
-        data: {
-          status,
-          ...(status === "RECEIVED" ? { receivedAt: new Date() } : {}),
-        },
-      });
+      await recordPurchaseOrderReceipt(tx, order, receiptToken, requested);
     });
     revalidatePurchasing(id);
     return { ok: true, id };

@@ -10,11 +10,17 @@ import {
   createPurchaseOrder,
   updatePurchaseOrder,
 } from "@/app/purchasing-actions";
+import {
+  MAX_INVENTORY_DECIMAL_PLACES,
+  MAX_INVENTORY_QUANTITY,
+} from "@/lib/inventory-quantity";
 
 type SupplierOption = { id: string; name: string; isActive: boolean };
 type ProductOption = { id: string; name: string; sku: string; unit: string };
 type InitialLine = { productId: string; quantity: number };
 type DraftLine = { productId: string; quantity: string };
+
+const quantityStep = 10 ** -MAX_INVENTORY_DECIMAL_PLACES;
 
 export function PurchaseOrderForm({
   suppliers,
@@ -135,8 +141,9 @@ export function PurchaseOrderForm({
                 id={`quantity-${index}`}
                 name="quantity"
                 type="number"
-                min="0"
-                step="any"
+                min={quantityStep}
+                max={MAX_INVENTORY_QUANTITY}
+                step={quantityStep}
                 inputMode="decimal"
                 required={Boolean(line.productId) || index === 0}
                 value={line.quantity}

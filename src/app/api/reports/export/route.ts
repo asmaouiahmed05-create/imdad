@@ -9,6 +9,8 @@ import {
 } from "@/lib/inventory-reports";
 import { inventoryStatus } from "@/lib/inventory-status";
 import { prisma } from "@/lib/db";
+import { getAuthenticatedPrincipal } from "@/lib/authz";
+import { authorizeReportExportRequest } from "@/lib/report-export-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +53,14 @@ function statusLabel(status: ReturnType<typeof inventoryStatus>) {
     : status === "low"
       ? "مخزون منخفض"
       : "متوفر";
+}
+
+function prismaErrorCode(error: unknown) {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" ? code : undefined;
+  }
+  return undefined;
 }
 
 function filterDescription(filters: ReturnType<typeof parseReportFilters>) {
@@ -132,6 +142,9 @@ function reportStream(stream: PassThrough) {
 }
 
 export async function GET(request: Request) {
+  const denial = await authorizeReportExportRequest(getAuthenticatedPrincipal);
+  if (denial) return denial;
+
   const params = new URL(request.url).searchParams;
   if (params.has("report") && !isReportType(params.get("report"))) {
     return Response.json(
@@ -288,12 +301,10 @@ export async function GET(request: Request) {
 
       await workbook.commit();
     } catch (error) {
-      console.error("Failed to stream inventory Excel report", error);
-      output.destroy(
-        error instanceof Error
-          ? error
-          : new Error("Failed to create inventory report"),
-      );
+      console.error("Failed to stream inventory Excel report", {
+        code: prismaErrorCode(error),
+      });
+      output.destroy(new Error("Failed to create inventory report"));
     }
   })();
 

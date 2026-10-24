@@ -1,24 +1,50 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import {
+  createProductWithInitialStock,
+  parseInventoryQuantity,
+} from "@/lib/inventory-quantity";
 import { revalidatePath } from "next/cache";
+import { requirePermission } from "@/lib/authz";
 
 export async function createProduct(
   formData: FormData
 ): Promise<{ ok: boolean; error?: string }> {
+  await requirePermission("product.create");
+
   const name = String(formData.get("name") ?? "").trim();
   const sku = String(formData.get("sku") ?? "").trim();
   const unit = String(formData.get("unit") ?? "").trim();
-  const quantity = parseFloat(String(formData.get("quantity") ?? "")) || 0;
-  const minQuantity = parseFloat(String(formData.get("minQuantity") ?? "")) || 0;
+  const quantity = parseInventoryQuantity(
+    String(formData.get("quantity") ?? ""),
+    true,
+  );
+  const minQuantity = parseInventoryQuantity(
+    String(formData.get("minQuantity") ?? ""),
+    true,
+  );
 
   if (!name || !sku || !unit) {
     return { ok: false, error: "الاسم والرمز والوحدة حقول مطلوبة" };
   }
+  if (quantity === null) {
+    return { ok: false, error: "أدخل كمية ابتدائية صالحة ضمن النطاق المسموح" };
+  }
+  if (minQuantity === null) {
+    return { ok: false, error: "أدخل حد تنبيه صالحًا ضمن النطاق المسموح" };
+  }
+  if (quantity > 0) await requirePermission("stock.move");
 
   try {
-    await prisma.product.create({
-      data: { name, sku, unit, quantity, minQuantity },
+    await prisma.$transaction(async (tx) => {
+      await createProductWithInitialStock(tx, {
+        name,
+        sku,
+        unit,
+        quantity,
+        minQuantity,
+      });
     });
 
     revalidatePath("/");
@@ -27,7 +53,7 @@ export async function createProduct(
     if (prismaErrorCode(e) === "P2002") {
       return { ok: false, error: "هذا الرمز (SKU) مستخدم لمنتج آخر" };
     }
-    console.error("Failed to create product", e);
+    console.error("Failed to create product", { code: prismaErrorCode(e) });
     return { ok: false, error: "تعذّر إضافة المنتج، حاول مرة أخرى" };
   }
 }
@@ -36,16 +62,24 @@ class MovementError extends Error {}
 export async function recordMovement(
   formData: FormData
 ): Promise<{ ok: boolean; error?: string }> {
+  await requirePermission("stock.move");
+
   const productId = String(formData.get("productId") ?? "");
   const type = String(formData.get("type") ?? "");
-  const quantity = parseFloat(String(formData.get("quantity") ?? ""));
+  const quantity = parseInventoryQuantity(
+    String(formData.get("quantity") ?? ""),
+    false,
+  );
   const reason = String(formData.get("reason") ?? "").trim() || null;
   const reference = String(formData.get("reference") ?? "").trim() || null;
 
   if (!productId) return { ok: false, error: "اختر المنتج" };
   if (type !== "IN" && type !== "OUT") return { ok: false, error: "نوع الحركة غير صالح" };
-  if (!Number.isFinite(quantity) || quantity <= 0) {
-    return { ok: false, error: "أدخل كمية أكبر من صفر" };
+  if (quantity === null) {
+    return {
+      ok: false,
+      error: "أدخل كمية أكبر من صفر ضمن النطاق والدقة المسموحين",
+    };
   }
 
   try {
@@ -97,20 +131,26 @@ function prismaErrorCode(e: unknown): string | undefined {
 export async function updateProduct(
   formData: FormData
 ): Promise<{ ok: boolean; error?: string }> {
+  await requirePermission("product.update");
+
   const id = String(formData.get("id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const sku = String(formData.get("sku") ?? "").trim();
   const unit = String(formData.get("unit") ?? "").trim();
-  const minQuantityValue = String(formData.get("minQuantity") ?? "").trim();
-  const minQuantity =
-    minQuantityValue === "" ? undefined : Number(minQuantityValue);
+  const minQuantity = parseInventoryQuantity(
+    String(formData.get("minQuantity") ?? ""),
+    true,
+  );
 
   if (!id) return { ok: false, error: "المنتج غير محدد" };
   if (!name || !sku || !unit) {
     return { ok: false, error: "الاسم والرمز والوحدة حقول مطلوبة" };
   }
-  if (minQuantity !== undefined && (!Number.isFinite(minQuantity) || minQuantity < 0)) {
-    return { ok: false, error: "حد التنبيه يجب أن يكون صفرًا أو أكثر" };
+  if (minQuantity === null) {
+    return {
+      ok: false,
+      error: "أدخل حد تنبيه صالحًا ضمن النطاق المسموح",
+    };
   }
 
   try {
@@ -128,7 +168,7 @@ export async function updateProduct(
         name,
         sku,
         unit,
-        ...(minQuantity !== undefined ? { minQuantity } : {}),
+        minQuantity,
       },
     });
     revalidatePath("/");
@@ -141,7 +181,7 @@ export async function updateProduct(
     if (errorCode === "P2025") {
       return { ok: false, error: "المنتج غير موجود أو تم حذفه" };
     }
-    console.error("Failed to update product", e);
+    console.error("Failed to update product", { code: prismaErrorCode(e) });
     return { ok: false, error: "تعذّر حفظ التعديلات، حاول مرة أخرى" };
   }
 }
@@ -149,6 +189,8 @@ export async function updateProduct(
 export async function deleteProduct(
   id: string
 ): Promise<{ ok: boolean; error?: string }> {
+  await requirePermission("product.delete");
+
   if (!id) return { ok: false, error: "المنتج غير محدد" };
 
   try {

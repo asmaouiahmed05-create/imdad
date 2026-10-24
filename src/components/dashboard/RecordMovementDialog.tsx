@@ -14,9 +14,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { recordMovement } from "@/app/actions";
+import {
+  MAX_INVENTORY_DECIMAL_PLACES,
+  MAX_INVENTORY_QUANTITY,
+} from "@/lib/inventory-quantity";
 
 type ProductOption = { id: string; name: string; sku: string; unit: string };
 
+const quantityStep = 10 ** -MAX_INVENTORY_DECIMAL_PLACES;
 const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
@@ -87,8 +92,9 @@ export function RecordMovementDialog({ products }: { products: ProductOption[] }
                 id="movement-quantity"
                 name="quantity"
                 type="number"
-                step="any"
-                min="0"
+                step={quantityStep}
+                min={quantityStep}
+                max={MAX_INVENTORY_QUANTITY}
                 required
               />
             </div>

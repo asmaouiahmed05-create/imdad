@@ -34,6 +34,7 @@ import {
 } from "@/lib/inventory-status";
 import { RecordMovementButton } from "@/components/dashboard/RecordMovementButton";
 import { RecentMovementsCard } from "@/components/dashboard/RecentMovementsCard";
+import { requirePagePermission } from "@/lib/authz";
 
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
   maximumFractionDigits: 2,
@@ -64,6 +65,7 @@ export default async function Home({
 }: {
   searchParams: SearchParams;
 }) {
+  await requirePagePermission("inventory.read");
   await connection();
 
   const params = await searchParams;

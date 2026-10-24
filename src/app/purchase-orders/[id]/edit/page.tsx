@@ -3,12 +3,14 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { PurchaseOrderForm } from "@/components/purchasing/PurchaseOrderForm";
 import { prisma } from "@/lib/db";
+import { requirePagePermission } from "@/lib/authz";
 
 export default async function EditPurchaseOrderPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePagePermission("purchase_order.edit_draft");
   await connection();
   const { id } = await params;
   const [order, activeSuppliers, products] = await Promise.all([

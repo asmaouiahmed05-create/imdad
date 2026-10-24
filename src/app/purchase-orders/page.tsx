@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { prisma } from "@/lib/db";
 import type { PurchaseOrderStatus } from "@/lib/purchase-order-state";
+import { requirePagePermission } from "@/lib/authz";
 
 const PAGE_SIZE = 15;
 const numberFormatter = new Intl.NumberFormat("ar-DZ");
@@ -63,6 +64,7 @@ export default async function PurchaseOrdersPage({
 }: {
   searchParams: SearchParams;
 }) {
+  await requirePagePermission("purchase_order.read");
   await connection();
   const params = await searchParams;
   const query = (firstValue(params.q) ?? "").trim().slice(0, 100);

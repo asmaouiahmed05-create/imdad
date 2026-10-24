@@ -13,7 +13,7 @@ export function PurchasingError({
   label: string;
 }) {
   useEffect(() => {
-    console.error(`${label} page failed to load`, error);
+    console.error(`${label} page failed to load`, { digest: error.digest });
   }, [error, label]);
 
   return (

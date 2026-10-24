@@ -11,7 +11,9 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Inventory dashboard failed to load", error);
+    console.error("Inventory dashboard failed to load", {
+      digest: error.digest,
+    });
   }, [error]);
 
   return (

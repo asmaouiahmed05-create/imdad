@@ -1,3 +1,5 @@
+import { parseInventoryQuantity } from "./inventory-quantity.ts";
+
 export type PurchaseOrderStatus =
   | "DRAFT"
   | "SUBMITTED"
@@ -11,9 +13,7 @@ export type ReceiptLine = {
 };
 
 export function parsePositiveQuantity(value: string) {
-  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(value.trim())) return null;
-  const quantity = Number(value);
-  return Number.isFinite(quantity) && quantity > 0 ? quantity : null;
+  return parseInventoryQuantity(value, false);
 }
 
 export function calculateReceipt(line: ReceiptLine, requestedQuantity: number) {

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { SupplierForm } from "@/components/purchasing/SupplierForm";
+import { requirePagePermission } from "@/lib/authz";
 
-export default function NewSupplierPage() {
+export default async function NewSupplierPage() {
+  await requirePagePermission("supplier.manage");
   return (
     <main className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-6 lg:p-8">
       <Link

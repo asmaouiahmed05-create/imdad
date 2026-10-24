@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { Bell, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductSearch } from "@/components/dashboard/ProductSearch";
+import { SignOutButton } from "@/components/auth/SignOutButton";
 
 export function Topbar() {
   return (
@@ -25,6 +26,7 @@ export function Topbar() {
           >
             <ProductSearch />
           </Suspense>
+          <SignOutButton />
           <Button
             type="button"
             variant="outline"

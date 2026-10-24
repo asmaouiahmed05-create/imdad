@@ -15,6 +15,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { deleteProduct, updateProduct } from "@/app/actions";
+import {
+  MAX_INVENTORY_DECIMAL_PLACES,
+  MAX_INVENTORY_QUANTITY,
+} from "@/lib/inventory-quantity";
+
+const quantityStep = 10 ** -MAX_INVENTORY_DECIMAL_PLACES;
 
 export type ProductActionsProduct = {
   id: string;
@@ -118,9 +124,11 @@ function EditProductDialog({ product }: { product: ProductActionsProduct }) {
                 id={`edit-${product.id}-min`}
                 name="minQuantity"
                 type="number"
-                step="any"
                 min="0"
+                max={MAX_INVENTORY_QUANTITY}
+                step={quantityStep}
                 defaultValue={product.minQuantity}
+                required
               />
             </div>
           </div>

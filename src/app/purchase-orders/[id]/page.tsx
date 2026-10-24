@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "@/lib/db";
+import { requirePagePermission } from "@/lib/authz";
 
 const dateFormatter = new Intl.DateTimeFormat("ar-DZ", {
   dateStyle: "medium",
@@ -32,6 +33,7 @@ export default async function PurchaseOrderDetailsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePagePermission("purchase_order.read");
   await connection();
   const { id } = await params;
   const order = await prisma.purchaseOrder.findUnique({

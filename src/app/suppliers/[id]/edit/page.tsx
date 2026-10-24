@@ -4,12 +4,14 @@ import { connection } from "next/server";
 import { SupplierForm } from "@/components/purchasing/SupplierForm";
 import type { SupplierFormValue } from "@/components/purchasing/SupplierForm";
 import { prisma } from "@/lib/db";
+import { requirePagePermission } from "@/lib/authz";
 
 export default async function EditSupplierPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePagePermission("supplier.manage");
   await connection();
   const { id } = await params;
   const supplier = await prisma.supplier.findUnique({ where: { id } });

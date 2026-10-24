@@ -24,6 +24,7 @@ import {
 import { inventoryStatus, inventoryStatusWhere } from "@/lib/inventory-status";
 import { prisma } from "@/lib/db";
 import type { WarehouseProduct } from "@/components/dashboard/types";
+import { requirePagePermission } from "@/lib/authz";
 
 const PAGE_SIZE = 20;
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
@@ -70,6 +71,7 @@ export default async function ReportsPage({
 }: {
   searchParams: SearchParams;
 }) {
+  await requirePagePermission("reports.read");
   await connection();
   const filters = parseReportFilters(toSearchParams(await searchParams));
   const productWhere = productReportWhere(filters.report, filters.query);
