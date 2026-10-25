@@ -18,6 +18,7 @@ export function createAuthOptions(database: BetterAuthOptions["database"]) {
       disableSessionRefresh: true,
       cookieCache: { enabled: false },
     },
+    disabledPaths: ["/admin/stop-impersonating"],
     plugins: [
       admin({
         ac: adminAccessControl,

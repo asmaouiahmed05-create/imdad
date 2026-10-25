@@ -10,12 +10,16 @@ const TEST_BASE_URL = "http://localhost/api/auth";
 const TEST_PASSWORD = "local-test-password-123";
 const TEST_SECRET = "unit-test-secret-not-used-outside-tests";
 
-function createMemoryDatabase() {
+function createMemoryDatabase(): Record<string, Array<Record<string, unknown>>> {
   return { user: [], session: [], account: [], verification: [] };
 }
 
-function createTestAuth(publicSignUp: boolean, defaultRole = "administrator") {
-  const options = createAuthOptions(memoryAdapter(createMemoryDatabase()));
+function createTestAuth(
+  publicSignUp: boolean,
+  defaultRole = "administrator",
+  database = createMemoryDatabase(),
+) {
+  const options = createAuthOptions(memoryAdapter(database));
   return betterAuth({
     ...options,
     secret: TEST_SECRET,
@@ -100,6 +104,7 @@ test("production Better Auth config disables public signup", async () => {
   assert.equal(options.session?.expiresIn, 12 * 60 * 60);
   assert.equal(options.session?.disableSessionRefresh, true);
   assert.equal(options.session?.cookieCache?.enabled, false);
+  assert.deepEqual(options.disabledPaths, ["/admin/stop-impersonating"]);
 
   const auth = betterAuth({
     ...options,
@@ -204,7 +209,7 @@ test("admin plugin enforces provisioning, bans, and no impersonation for every r
     assert.equal(impersonate.status, 403, `${role} impersonation must be denied`);
 
     const stop = await post(auth, "/admin/stop-impersonating", {}, cookie);
-    assert.notEqual(stop.status, 200, `${role} cannot create an impersonation`);
+    assert.equal(stop.status, 404, `${role} stop-impersonation endpoint is disabled`);
     const currentSession = await auth.api.getSession({
       headers: new Headers({ cookie }),
     });
@@ -225,4 +230,67 @@ test("admin plugin enforces provisioning, bans, and no impersonation for every r
     null,
     "banning a user must revoke the previously valid session",
   );
+});
+
+test("expired Better Auth sessions are rejected", async () => {
+  const database = createMemoryDatabase();
+  const auth = createTestAuth(true, "administrator", database);
+  const signup = await post(auth, "/sign-up/email", {
+    name: "Administrator",
+    email: "expiry@example.test",
+    password: TEST_PASSWORD,
+  });
+  assert.equal(signup.status, 200);
+  const cookie = cookieFrom(signup);
+
+  assert.ok(await auth.api.getSession({ headers: new Headers({ cookie }) }));
+  assert.equal(database.session.length, 1);
+  database.session[0].expiresAt = new Date(0);
+
+  assert.equal(
+    await auth.api.getSession({ headers: new Headers({ cookie }) }),
+    null,
+  );
+});
+
+test("administrator role changes are reflected in existing sessions", async () => {
+  const auth = createTestAuth(true);
+  const signup = await post(auth, "/sign-up/email", {
+    name: "Administrator",
+    email: "role-admin@example.test",
+    password: TEST_PASSWORD,
+  });
+  assert.equal(signup.status, 200);
+  const adminCookie = cookieFrom(signup);
+
+  const created = await post(
+    auth,
+    "/admin/create-user",
+    {
+      name: "Operator",
+      email: "role-operator@example.test",
+      password: TEST_PASSWORD,
+      role: "inventory_operator",
+    },
+    adminCookie,
+  );
+  assert.equal(created.status, 200);
+  const operatorCookie = await signIn(auth, "role-operator@example.test");
+  const before = await auth.api.getSession({
+    headers: new Headers({ cookie: operatorCookie }),
+  });
+  assert.equal(before?.user.role, "inventory_operator");
+
+  const changed = await post(
+    auth,
+    "/admin/set-role",
+    { userId: (await created.json() as { user: { id: string } }).user.id, role: "read_only" },
+    adminCookie,
+  );
+  assert.equal(changed.status, 200);
+
+  const after = await auth.api.getSession({
+    headers: new Headers({ cookie: operatorCookie }),
+  });
+  assert.equal(after?.user.role, "read_only");
 });
