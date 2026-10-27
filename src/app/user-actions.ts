@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { isAppRole } from "@/lib/authorization";
 import { auth } from "@/lib/auth";
 import { requirePermission } from "@/lib/authz";
@@ -38,6 +39,7 @@ export async function createManagedUser(
       body: { name, email, password, role },
       headers: await headers(),
     });
+    revalidatePath("/users");
     return { ok: true };
   } catch {
     return { ok: false, error: "تعذّر إنشاء الحساب." };
@@ -47,12 +49,15 @@ export async function createManagedUser(
 export async function changeManagedUserRole(
   formData: FormData,
 ): Promise<UserActionResult> {
-  await requirePermission("users.manage");
+  const principal = await requirePermission("users.manage");
 
   const userId = field(formData, "userId");
   const role = field(formData, "role");
   if (!userId || !isAppRole(role)) {
     return { ok: false, error: "بيانات المستخدم أو دوره غير صالحة." };
+  }
+  if (userId === principal.id) {
+    return { ok: false, error: "لا يمكنك تغيير دور حسابك." };
   }
 
   try {
@@ -60,6 +65,7 @@ export async function changeManagedUserRole(
       body: { userId, role },
       headers: await headers(),
     });
+    revalidatePath("/users");
     return { ok: true };
   } catch {
     return { ok: false, error: "تعذّر تغيير دور المستخدم." };
@@ -69,16 +75,20 @@ export async function changeManagedUserRole(
 export async function disableManagedUser(
   formData: FormData,
 ): Promise<UserActionResult> {
-  await requirePermission("users.manage");
+  const principal = await requirePermission("users.manage");
 
   const userId = field(formData, "userId");
   if (!userId) return { ok: false, error: "المستخدم غير محدد." };
+  if (userId === principal.id) {
+    return { ok: false, error: "لا يمكنك تعطيل حسابك." };
+  }
 
   try {
     await auth.api.banUser({
       body: { userId, banReason: "Account disabled by an administrator" },
       headers: await headers(),
     });
+    revalidatePath("/users");
     return { ok: true };
   } catch {
     return { ok: false, error: "تعذّر تعطيل الحساب." };

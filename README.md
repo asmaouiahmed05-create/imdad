@@ -17,8 +17,12 @@ Available checks:
 npm run lint
 npm run build
 node --experimental-strip-types --test src/lib/*.test.ts
+npm run test:security-boundaries
 npm run test:postgres:safety
 ```
+
+The security-boundary test runner uses Node.js 22.15 or later for native
+module hooks and module mocking.
 
 The opt-in PostgreSQL integration workflow requires a separately approved,
 dedicated disposable local database. Follow [the PostgreSQL test guide](./tests/postgres/README.md);
@@ -48,7 +52,9 @@ Accounts are intended to be created by an administrator; new accounts default
 to the `read_only` role. Read-only users can view inventory and reports,
 inventory operators can perform designated inventory and purchasing
 operations and export reports, and administrators receive the declared
-application permissions.
+application permissions. Administrators can manage accounts from the
+user-management page; administrators cannot change or disable their own
+account from that interface.
 
 **First administrator provisioning is unresolved.** A fresh database has no
 documented, approved process to create its first administrator, and public
@@ -80,10 +86,11 @@ operators should:
   commands against production.
 - Define monitoring, alerting, access review, incident response, and rollback
   or forward-recovery ownership before launch.
-- Run the project checks in the release environment. The PostgreSQL test guide
-  documents the isolated integration suite, but it does not exercise direct
-  HTTP requests to the Next.js report-export Route Handler or privileged
-  Server Actions. Those request-boundary tests remain a coverage gap.
+- Run the project checks in the release environment. The database-free
+  `test:security-boundaries` suite invokes the report-export Route Handler and
+  managed-user Server Actions with isolated auth/database substitutes; it does
+  not replace the PostgreSQL-backed integration suite or production
+  verification.
 
 Database backups, restore procedures, production migrations, and production
 configuration must be verified by authorized operators. This documentation

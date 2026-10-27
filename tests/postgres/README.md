@@ -82,9 +82,12 @@ those behaviors require an administrator fixture and are intentionally not
 covered by this workflow. If a run is interrupted, discard and recreate the
 disposable database rather than reusing uncertain test state.
 
-Direct Next.js Server Action requests and the report-export Route Handler still
-require a separate HTTP-level integration suite; database-free authorization
-tests cover the export role decision.
+The database-free `npm run test:security-boundaries` suite directly invokes
+the report-export Route Handler and managed-user Server Actions with mocked
+auth/database dependencies. It verifies request-boundary authorization,
+invalid export parameters, denied user management without mutations, and
+administrator action behavior. These tests do not require PostgreSQL and do
+not replace the separate PostgreSQL-backed integration coverage.
 
 ## Cleanup
 

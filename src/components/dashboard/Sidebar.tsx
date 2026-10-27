@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   ShoppingCart,
   Truck,
+  UserRoundCog,
   Warehouse,
 } from "lucide-react";
 
@@ -16,6 +17,7 @@ const navItems = [
   { label: "التقارير", icon: FileSpreadsheet, href: "/reports" },
   { label: "الموردون", icon: Truck, href: "/suppliers" },
   { label: "أوامر الشراء", icon: ShoppingCart, href: "/purchase-orders" },
+  { label: "إدارة المستخدمين", icon: UserRoundCog, href: "/users" },
   { label: "الإنتاج", icon: Factory },
 ];
 

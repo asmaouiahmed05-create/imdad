@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test:security-boundaries": "node --conditions=react-server --experimental-strip-types --experimental-test-module-mocks --test src/app/api/reports/export/route.test.mjs src/app/user-actions.test.mjs",
     "start": "next start",
     "lint": "eslint",
     "test:postgres:safety": "node --test scripts/disposable-postgres.test.mjs",
