@@ -89,12 +89,10 @@ after(async () => {
 test("PostgreSQL-backed authentication and authorization flows", async () => {
   const password = randomBytes(18).toString("base64url");
   const suffix = randomBytes(8).toString("hex");
-  const adminEmail = `admin-${suffix}@example.test`;
   const operatorEmail = `operator-${suffix}@example.test`;
   const readOnlyEmail = `readonly-${suffix}@example.test`;
   const expiredEmail = `expired-${suffix}@example.test`;
 
-  await createFixtureUser(adminEmail, "administrator", password);
   const operator = await createFixtureUser(
     operatorEmail,
     "inventory_operator",
@@ -111,7 +109,6 @@ test("PostgreSQL-backed authentication and authorization flows", async () => {
     password,
   );
 
-  const adminCookie = await signIn(adminEmail, password);
   const operatorCookie = await signIn(operatorEmail, password);
   const readOnlyCookie = await signIn(readOnlyEmail, password);
   const expiredCookie = await signIn(expiredEmail, password);
@@ -123,14 +120,13 @@ test("PostgreSQL-backed authentication and authorization flows", async () => {
   });
   assert.notEqual(signup.status, 200);
 
-  for (const [role, cookie] of [
-    ["read_only", readOnlyCookie],
-    ["inventory_operator", operatorCookie],
-    ["administrator", adminCookie],
+  for (const [role, cookie, target] of [
+    ["read_only", readOnlyCookie, operator],
+    ["inventory_operator", operatorCookie, readOnly],
   ]) {
     const impersonate = await post(
       "/admin/impersonate-user",
-      { userId: readOnly.id },
+      { userId: target.id },
       cookie,
     );
     assert.equal(impersonate.status, 403, `${role} impersonation must be denied`);
@@ -139,42 +135,56 @@ test("PostgreSQL-backed authentication and authorization flows", async () => {
     assert.equal(stop.status, 404, `${role} stop-impersonation must be disabled`);
   }
 
-  const provisioningDenied = await post(
-    "/admin/create-user",
-    {
-      name: "Denied",
-      email: `denied-${suffix}@example.test`,
-      password,
-      role: "read_only",
-    },
-    readOnlyCookie,
-  );
-  assert.equal(provisioningDenied.status, 403);
+  for (const [role, cookie, target] of [
+    ["read_only", readOnlyCookie, operator],
+    ["inventory_operator", operatorCookie, readOnly],
+  ]) {
+    const deniedEmail = `denied-${role}-${suffix}@example.test`;
+    const createUser = await post(
+      "/admin/create-user",
+      { name: "Denied", email: deniedEmail, password, role: "read_only" },
+      cookie,
+    );
+    assert.equal(createUser.status, 403, `${role} user creation must be denied`);
+    assert.equal(
+      await prisma.user.findUnique({ where: { email: deniedEmail } }),
+      null,
+      `${role} denial must not create a user`,
+    );
 
-  const provisionedEmail = `provisioned-${suffix}@example.test`;
-  fixtureEmails.add(provisionedEmail);
-  const provisioned = await post(
-    "/admin/create-user",
-    {
-      name: "Provisioned",
-      email: provisionedEmail,
-      password,
-      role: "read_only",
-    },
-    adminCookie,
-  );
-  assert.equal(provisioned.status, 200);
+    const userBeforeRoleChange = await prisma.user.findUnique({
+      where: { id: target.id },
+    });
+    assert.ok(userBeforeRoleChange, `${role} target user must exist`);
+    const setRole = await post(
+      "/admin/set-role",
+      { userId: target.id, role: "read_only" },
+      cookie,
+    );
+    assert.equal(setRole.status, 403, `${role} role changes must be denied`);
+    // The default Prisma result includes every persisted scalar User field; no fields are excluded.
+    assert.deepEqual(
+      await prisma.user.findUnique({ where: { id: target.id } }),
+      userBeforeRoleChange,
+      `${role} role-change denial must not mutate the user`,
+    );
 
-  const roleChange = await post(
-    "/admin/set-role",
-    { userId: operator.id, role: "read_only" },
-    adminCookie,
-  );
-  assert.equal(roleChange.status, 200);
-  const updatedRoleSession = await auth.api.getSession({
-    headers: new Headers({ cookie: operatorCookie }),
-  });
-  assert.equal(updatedRoleSession?.user.role, "read_only");
+    const userBeforeBan = await prisma.user.findUnique({
+      where: { id: target.id },
+    });
+    assert.ok(userBeforeBan, `${role} target user must still exist`);
+    const banUser = await post(
+      "/admin/ban-user",
+      { userId: target.id, banReason: "integration test denial check" },
+      cookie,
+    );
+    assert.equal(banUser.status, 403, `${role} bans must be denied`);
+    assert.deepEqual(
+      await prisma.user.findUnique({ where: { id: target.id } }),
+      userBeforeBan,
+      `${role} ban denial must not mutate the user`,
+    );
+  }
 
   const expiredSession = await prisma.session.updateMany({
     where: { userId: expiredUser.id },
@@ -188,24 +198,11 @@ test("PostgreSQL-backed authentication and authorization flows", async () => {
     null,
   );
 
-  const banned = await post(
-    "/admin/ban-user",
-    { userId: readOnly.id, banReason: "integration test disabled user" },
-    adminCookie,
-  );
-  assert.equal(banned.status, 200);
-  assert.equal(
-    await auth.api.getSession({
-      headers: new Headers({ cookie: readOnlyCookie }),
-    }),
-    null,
-  );
-
-  const signedOut = await post("/sign-out", {}, adminCookie);
+  const signedOut = await post("/sign-out", {}, operatorCookie);
   assert.equal(signedOut.status, 200);
   assert.equal(
     await auth.api.getSession({
-      headers: new Headers({ cookie: adminCookie }),
+      headers: new Headers({ cookie: operatorCookie }),
     }),
     null,
   );

@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const TEST_DATABASE = "imdad_integration_test";
 const TEST_USERNAME = "imdad_test";
-const TEST_PORT = "55432";
+const TEST_PORT = 55432;
 
 export function assertDisposablePostgresTarget(connectionString, allowFlag) {
   if (allowFlag !== "1") {
@@ -35,7 +35,7 @@ export function assertDisposablePostgresTarget(connectionString, allowFlag) {
     !LOCAL_HOSTS.has(url.hostname.toLowerCase()) ||
     username !== TEST_USERNAME ||
     database !== TEST_DATABASE ||
-    url.port !== TEST_PORT ||
+    url.port !== String(TEST_PORT) ||
     url.search !== "" ||
     url.hash !== ""
   ) {
@@ -45,11 +45,14 @@ export function assertDisposablePostgresTarget(connectionString, allowFlag) {
   }
 }
 
-export function assertLocalPostgresIdentity(identity, expectedUsername, expectedDatabase) {
+export function assertLocalPostgresIdentity(identity) {
   if (
-    identity?.username !== expectedUsername ||
-    identity?.database !== expectedDatabase ||
-    !["127.0.0.1", "::1"].includes(identity?.serverAddress)
+    !identity ||
+    Object.keys(identity).length !== 4 ||
+    identity.database !== TEST_DATABASE ||
+    identity.username !== TEST_USERNAME ||
+    identity.serverAddress !== "127.0.0.1" ||
+    identity.serverPort !== TEST_PORT
   ) {
     throw new Error(
       "Connected PostgreSQL identity is not the expected local test database.",
@@ -76,18 +79,16 @@ async function main() {
     process.env.IMDAD_ALLOW_DISPOSABLE_DATABASE,
   );
 
-  const url = new URL(connectionString);
   const client = new Client({ connectionString });
   try {
     await client.connect();
     const result = await client.query(
-      "SELECT current_database() AS database, current_user AS username, inet_server_addr()::text AS \"serverAddress\"",
+      "SELECT current_database() AS database, current_user AS username, host(inet_server_addr()) AS \"serverAddress\", inet_server_port() AS \"serverPort\"",
     );
-    assertLocalPostgresIdentity(
-      result.rows[0],
-      decodeURIComponent(url.username),
-      decodeURIComponent(url.pathname.slice(1)),
-    );
+    if (result.rows.length !== 1) {
+      throw new Error("Connected PostgreSQL identity query returned an ambiguous result.");
+    }
+    assertLocalPostgresIdentity(result.rows[0]);
   } finally {
     await client.end();
   }

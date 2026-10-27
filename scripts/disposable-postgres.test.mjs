@@ -79,58 +79,32 @@ test("rejects non-PostgreSQL URLs without echoing credentials", () => {
   );
 });
 
-test("accepts only matching identity served on a loopback PostgreSQL address", () => {
+test("accepts only the exact disposable PostgreSQL identity", () => {
   assert.doesNotThrow(() =>
-    assertLocalPostgresIdentity(
-      {
-        username: "imdad_test",
-        database: "imdad_integration_test",
-        serverAddress: "127.0.0.1",
-      },
-      "imdad_test",
-      "imdad_integration_test",
-    ),
-  );
-  assert.doesNotThrow(() =>
-    assertLocalPostgresIdentity(
-      {
-        username: "imdad_test",
-        database: "imdad_integration_test",
-        serverAddress: "::1",
-      },
-      "imdad_test",
-      "imdad_integration_test",
-    ),
+    assertLocalPostgresIdentity({
+      database: "imdad_integration_test",
+      username: "imdad_test",
+      serverAddress: "127.0.0.1",
+      serverPort: 55432,
+    }),
   );
 
-  for (const serverAddress of ["203.0.113.5", "172.18.0.2", null]) {
+  for (const identity of [
+    { database: "other_database", username: "imdad_test", serverAddress: "127.0.0.1", serverPort: 55432 },
+    { database: "imdad_integration_test", username: "other_role", serverAddress: "127.0.0.1", serverPort: 55432 },
+    { database: "imdad_integration_test", username: "imdad_test", serverAddress: "127.0.0.2", serverPort: 55432 },
+    { database: "imdad_integration_test", username: "imdad_test", serverAddress: "127.0.0.1/32", serverPort: 55432 },
+    { database: "imdad_integration_test", username: "imdad_test", serverAddress: "::1", serverPort: 55432 },
+    { database: "imdad_integration_test", username: "imdad_test", serverAddress: "127.0.0.1", serverPort: 5432 },
+    { database: "imdad_integration_test", username: "imdad_test", serverAddress: "127.0.0.1", serverPort: null },
+    { database: "imdad_integration_test", username: "imdad_test", serverAddress: "127.0.0.1" },
+    null,
+  ]) {
     assert.throws(
-      () =>
-        assertLocalPostgresIdentity(
-          {
-            username: "imdad_test",
-            database: "imdad_integration_test",
-            serverAddress,
-          },
-          "imdad_test",
-          "imdad_integration_test",
-        ),
+      () => assertLocalPostgresIdentity(identity),
       /not the expected local test database/,
     );
   }
-  assert.throws(
-    () =>
-      assertLocalPostgresIdentity(
-        {
-          username: "prod_admin",
-          database: "imdad_integration_test",
-          serverAddress: "127.0.0.1",
-        },
-        "imdad_test",
-        "imdad_integration_test",
-      ),
-    /not the expected local test database/,
-  );
 });
 
 test("auth migration is additive and creates the declared auth tables", async () => {

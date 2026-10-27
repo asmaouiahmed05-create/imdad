@@ -120,7 +120,8 @@ test("production Better Auth config disables public signup", async () => {
 });
 
 test("admin plugin enforces provisioning, bans, and no impersonation for every role", async () => {
-  const auth = createTestAuth(true);
+  const database = createMemoryDatabase();
+  const auth = createTestAuth(true, "administrator", database);
   const adminSignUp = await post(auth, "/sign-up/email", {
     name: "Administrator",
     email: "admin@example.test",
@@ -167,18 +168,53 @@ test("admin plugin enforces provisioning, bans, and no impersonation for every r
   const readOnlyCookie = await signIn(auth, "readonly@example.test");
   const operatorCookie = await signIn(auth, "operator@example.test");
   for (const [index, cookie] of [readOnlyCookie, operatorCookie].entries()) {
+    const deniedEmail = `denied-${index}@example.test`;
     const denied = await post(
       auth,
       "/admin/create-user",
       {
         name: "Denied",
-        email: `denied-${index}@example.test`,
+        email: deniedEmail,
         password: TEST_PASSWORD,
         role: "read_only",
       },
       cookie,
     );
     assert.equal(denied.status, 403);
+    assert.equal(
+      database.user.some((user) => user.email === deniedEmail),
+      false,
+      "denied account creation must not persist a user",
+    );
+  }
+
+  for (const { role, cookie, target } of [
+    { role: "read_only", cookie: readOnlyCookie, target: operator },
+    { role: "inventory_operator", cookie: operatorCookie, target: readOnly },
+  ]) {
+    const readTarget = () =>
+      database.user.find((user) => user.id === target.id);
+    const beforeRoleChange = structuredClone(readTarget());
+    assert.ok(beforeRoleChange, `${role} target user must exist`);
+
+    const roleChange = await post(
+      auth,
+      "/admin/set-role",
+      { userId: target.id, role: "administrator" },
+      cookie,
+    );
+    assert.equal(roleChange.status, 403);
+    assert.deepEqual(readTarget(), beforeRoleChange);
+
+    const beforeBan = structuredClone(readTarget());
+    const ban = await post(
+      auth,
+      "/admin/ban-user",
+      { userId: target.id, banReason: "denied operation test" },
+      cookie,
+    );
+    assert.equal(ban.status, 403);
+    assert.deepEqual(readTarget(), beforeBan);
   }
 
   const provisioned = await post(

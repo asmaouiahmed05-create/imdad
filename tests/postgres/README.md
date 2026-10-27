@@ -13,10 +13,11 @@ a tunnel, or a database containing data that must be preserved.
 The runner accepts only role `imdad_test`, database `imdad_integration_test`,
 port `55432`, and a loopback host. URI query parameters and fragments are
 rejected to prevent connection-string overrides. Before invoking Prisma it
-also checks `current_database()`, `current_user`, and `inet_server_addr()`; the
-server address must be `127.0.0.1` or `::1`. This rejects ordinary remote
-connections and TCP tunnels to servers that report their actual remote address.
-The runner overrides `DATABASE_URL` for children and never prints the URL.
+checks `current_database()`, `current_user`, `host(inet_server_addr())`, and
+`inet_server_port()`. These must exactly match the dedicated test database,
+role, `127.0.0.1`, and port `55432`; missing or ambiguous identity results fail
+closed. The runner overrides `DATABASE_URL` for children and never prints the
+URL.
 
 ## Provision and validate
 
@@ -71,16 +72,19 @@ tests. It checks the database identity immediately before migrations. It does
 not reset or drop the database. The migration is additive and should only be
 run against a disposable database created for this purpose.
 
-The integration suite creates an administrator solely as a test fixture in
-that disposable database; it is not a production bootstrap mechanism. Tests
-clean up their own fixture users. If a run is interrupted, discard and recreate
-the disposable database rather than reusing uncertain test state.
+The integration suite creates only non-administrator fixture users in that
+disposable database, using the test auth instance to prepare the fixtures.
+Tests clean up their own fixture users. It verifies successful authentication,
+signup denial, session expiry, and that read-only users and inventory operators
+are denied user creation, role changes, bans, and impersonation. It does not
+verify successful administrator-only actions, ban revocation, or role changes;
+those behaviors require an administrator fixture and are intentionally not
+covered by this workflow. If a run is interrupted, discard and recreate the
+disposable database rather than reusing uncertain test state.
 
-The PostgreSQL suite currently covers Better Auth signup denial, sign-in/out,
-session expiry, ban revocation, role changes, account provisioning, and
-impersonation endpoint denial. Direct Next.js Server Action requests and the
-report-export Route Handler still require a separate HTTP-level integration
-suite; database-free authorization tests cover the export role decision.
+Direct Next.js Server Action requests and the report-export Route Handler still
+require a separate HTTP-level integration suite; database-free authorization
+tests cover the export role decision.
 
 ## Cleanup
 
