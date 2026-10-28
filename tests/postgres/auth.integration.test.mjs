@@ -92,6 +92,7 @@ test("PostgreSQL-backed authentication and authorization flows", async () => {
   const operatorEmail = `operator-${suffix}@example.test`;
   const readOnlyEmail = `readonly-${suffix}@example.test`;
   const expiredEmail = `expired-${suffix}@example.test`;
+  const administratorEmail = `administrator-${suffix}@example.test`;
 
   const operator = await createFixtureUser(
     operatorEmail,
@@ -108,10 +109,26 @@ test("PostgreSQL-backed authentication and authorization flows", async () => {
     "read_only",
     password,
   );
+  await createFixtureUser(administratorEmail, "administrator", password);
 
   const operatorCookie = await signIn(operatorEmail, password);
   const readOnlyCookie = await signIn(readOnlyEmail, password);
   const expiredCookie = await signIn(expiredEmail, password);
+  const administratorCookie = await signIn(administratorEmail, password);
+
+  const invalidCredentials = await post("/sign-in/email", {
+    email: operatorEmail,
+    password: `${password}-incorrect`,
+  });
+  assert.notEqual(invalidCredentials.status, 200);
+  assert.deepEqual(invalidCredentials.headers.getSetCookie(), []);
+  assert.equal(
+    (await auth.api.getSession({
+      headers: new Headers({ cookie: operatorCookie }),
+    }))?.user.id,
+    operator.id,
+    "a successful sign-in must persist through a subsequent session lookup",
+  );
 
   const signup = await post("/sign-up/email", {
     name: "Public signup",
@@ -198,12 +215,39 @@ test("PostgreSQL-backed authentication and authorization flows", async () => {
     null,
   );
 
-  const signedOut = await post("/sign-out", {}, operatorCookie);
+  const roleChange = await auth.api.setRole({
+    body: { userId: operator.id, role: "read_only" },
+    headers: new Headers({ cookie: administratorCookie }),
+  });
+  assert.equal(roleChange.user.role, "read_only");
+  assert.equal(
+    (
+      await auth.api.getSession({
+        headers: new Headers({ cookie: operatorCookie }),
+      })
+    )?.user.role,
+    "read_only",
+    "role changes must take effect in an existing session",
+  );
+
+  const signedOut = await post("/sign-out", {}, readOnlyCookie);
   assert.equal(signedOut.status, 200);
+  assert.equal(
+    await auth.api.getSession({
+      headers: new Headers({ cookie: readOnlyCookie }),
+    }),
+    null,
+  );
+
+  await auth.api.banUser({
+    body: { userId: operator.id, banReason: "integration test account disable" },
+    headers: new Headers({ cookie: administratorCookie }),
+  });
   assert.equal(
     await auth.api.getSession({
       headers: new Headers({ cookie: operatorCookie }),
     }),
     null,
+    "disabling an account must revoke its existing session",
   );
 });
