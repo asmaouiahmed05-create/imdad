@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "test:security-boundaries": "node --conditions=react-server --experimental-strip-types --experimental-test-module-mocks --test src/app/api/reports/export/route.test.mjs src/app/user-actions.test.mjs",
+    "test:admin-bootstrap": "node --test scripts/bootstrap-admin.test.mjs",
+    "auth:bootstrap-admin": "node --conditions=react-server --experimental-strip-types scripts/bootstrap-admin.mjs",
     "start": "next start",
     "lint": "eslint",
     "test:postgres:safety": "node --test scripts/disposable-postgres.test.mjs",

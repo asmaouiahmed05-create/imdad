@@ -19,6 +19,7 @@ npm run build
 node --experimental-strip-types --test src/lib/*.test.ts
 npm run test:security-boundaries
 npm run test:postgres:safety
+npm run test:admin-bootstrap
 ```
 
 The security-boundary test runner uses Node.js 22.15 or later for native
@@ -56,12 +57,17 @@ application permissions. Administrators can manage accounts from the
 user-management page; administrators cannot change or disable their own
 account from that interface.
 
-**First administrator provisioning is unresolved.** A fresh database has no
-documented, approved process to create its first administrator, and public
-signup must remain disabled. Do not enable public registration or manually
-insert an administrator as a workaround. Production release is blocked until
-an authorized, auditable bootstrap procedure is designed, reviewed, and
-approved.
+Public signup remains disabled. The one-time `npm run auth:bootstrap-admin`
+command creates the first account through Better Auth only when the Neon
+database has no users. It requires `DATABASE_URL` to be present in the process
+environment (it will not fall back to a dotenv file), an explicit
+`IMDAD_ALLOW_ADMIN_BOOTSTRAP=1` gate, `IMDAD_ADMIN_EMAIL`, and a
+`IMDAD_ADMIN_PASSWORD` of at least 12 characters. Provide the bootstrap inputs
+through a protected, temporary environment; never put the password in command
+arguments, source files, or chat. The command serializes concurrent attempts,
+refuses any non-Neon endpoint or non-empty user table, verifies the persisted
+administrator role, and does not print credentials. Remove the temporary
+bootstrap inputs from the secret manager after successful provisioning.
 
 ## Production and release checklist
 
