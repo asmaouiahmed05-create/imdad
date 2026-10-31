@@ -18,7 +18,7 @@ const navItems = [
   { label: "الموردون", icon: Truck, href: "/suppliers" },
   { label: "أوامر الشراء", icon: ShoppingCart, href: "/purchase-orders" },
   { label: "إدارة المستخدمين", icon: UserRoundCog, href: "/users" },
-  { label: "الإنتاج", icon: Factory },
+  { label: "الإنتاج", icon: Factory, href: "/production" },
 ];
 
 export function Sidebar() {
