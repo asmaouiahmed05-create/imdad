@@ -2,41 +2,75 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-const mockProducts = [
-  "كرسي مكتبي",
-  "طاولة اجتماعات",
-  "رف تخزين معدني",
-  "خزانة ملفات",
-];
+import { useProductionDemo } from "@/components/production/ProductionDemoProvider";
+import {
+  DEMO_PRODUCTS,
+  parseProductionQuantity,
+  validateProductionOrder,
+} from "@/lib/production-demo";
 
 export function ProductionOrderForm() {
-  const [message, setMessage] = useState("");
+  const router = useRouter();
+  const { addOrder, ready } = useProductionDemo();
+  const [error, setError] = useState("");
+  const [createdOrderId, setCreatedOrderId] = useState("");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError("");
     const formData = new FormData(event.currentTarget);
-    const startDate = String(formData.get("plannedStartDate") ?? "");
-    const completionDate = String(formData.get("expectedCompletionDate") ?? "");
-
-    if (completionDate < startDate) {
-      setMessage("يجب أن يكون تاريخ الإنجاز المتوقع بعد تاريخ بدء الإنتاج.");
+    const quantity = parseProductionQuantity(
+      String(formData.get("plannedQuantity") ?? ""),
+    );
+    if (quantity === null) {
+      setError("أدخل كمية أكبر من صفر وبحد أقصى ست خانات عشرية.");
       return;
     }
 
-    setMessage(
-      "هذه واجهة تجريبية فقط. لم يتم حفظ أمر الإنتاج أو إنشاء سجل فعلي.",
-    );
+    const input = {
+      product: String(formData.get("finishedProduct") ?? ""),
+      quantity,
+      plannedStartDate: String(formData.get("plannedStartDate") ?? ""),
+      expectedCompletionDate: String(
+        formData.get("expectedCompletionDate") ?? "",
+      ),
+      notes: String(formData.get("notes") ?? "").trim(),
+    };
+    const validationError = validateProductionOrder(input);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    try {
+      const order = addOrder(input);
+      setCreatedOrderId(order.id);
+      event.currentTarget.reset();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "تعذّر إنشاء أمر العرض. حاول مرة أخرى.",
+      );
+    }
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <p className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-sm leading-6 text-amber-200">
-        نموذج تجريبي: المنتجات أمثلة ثابتة، ولن تُحفظ البيانات أو تُغيّر المخزون.
+        نموذج تفاعلي للعرض فقط. يُحفظ الأمر في تخزين هذا المتصفح؛ لا يُحفظ في
+        قاعدة بيانات ولا يغيّر المخزون.
       </p>
+
+      {!ready && (
+        <p role="status" className="text-sm text-slate-400">
+          جارٍ تجهيز بيانات العرض...
+        </p>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="finishedProduct">المنتج النهائي *</Label>
@@ -48,9 +82,9 @@ export function ProductionOrderForm() {
           className="h-10 w-full rounded-lg border border-white/[0.12] bg-slate-950 px-3 text-sm text-slate-100 outline-none focus-visible:border-sky-400/50 focus-visible:ring-2 focus-visible:ring-sky-400/20"
         >
           <option value="" disabled>
-            اختر منتجًا نموذجيًا
+            اختر منتجًا تجريبيًا
           </option>
-          {mockProducts.map((product) => (
+          {DEMO_PRODUCTS.map((product) => (
             <option key={product} value={product}>
               {product}
             </option>
@@ -66,6 +100,7 @@ export function ProductionOrderForm() {
             name="plannedQuantity"
             type="number"
             min="0.000001"
+            max="1000000000"
             step="0.000001"
             inputMode="decimal"
             placeholder="مثال: 100"
@@ -105,21 +140,41 @@ export function ProductionOrderForm() {
         </div>
       </div>
 
-      {message && (
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-sm text-rose-200"
+        >
+          {error}
+        </p>
+      )}
+      {createdOrderId && (
         <p
           role="status"
-          className={
-            message.startsWith("يجب")
-              ? "text-sm text-rose-300"
-              : "text-sm text-amber-200"
-          }
+          className="rounded-lg border border-emerald-400/20 bg-emerald-400/[0.06] px-3 py-2 text-sm text-emerald-200"
         >
-          {message}
+          تم إنشاء أمر العرض بنجاح.{" "}
+          <Link
+            href={`/production/orders/${createdOrderId}`}
+            className="font-semibold underline underline-offset-2"
+          >
+            عرض التفاصيل
+          </Link>
+          {" · "}
+          <button
+            type="button"
+            className="font-semibold underline underline-offset-2"
+            onClick={() => router.push("/production")}
+          >
+            فتح قائمة الإنتاج
+          </button>
         </p>
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="submit">معاينة البيانات</Button>
+        <Button type="submit" disabled={!ready}>
+          إنشاء أمر تجريبي
+        </Button>
         <Button
           type="button"
           variant="outline"
