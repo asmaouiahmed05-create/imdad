@@ -24,7 +24,6 @@ export default async function EditSupplierPage({
     email: supplier.email,
     address: supplier.address,
     notes: supplier.notes,
-    isActive: supplier.isActive,
   };
 
   return (
@@ -33,7 +32,13 @@ export default async function EditSupplierPage({
         العودة إلى المورد
       </Link>
       <section className="rounded-2xl border border-white/[0.07] bg-slate-900/75 p-5 sm:p-7">
-        <h2 className="mb-6 text-xl font-semibold text-white">تعديل بيانات المورد</h2>
+        <p className="mb-2 text-xs font-semibold tracking-[0.16em] text-sky-300">
+          سجل الموردين
+        </p>
+        <h2 className="mb-2 text-xl font-semibold text-white">تعديل بيانات المورد</h2>
+        <p className="mb-6 text-sm text-slate-400">
+          تغيير حالة التفعيل متاح من صفحة التفاصيل ويتطلب تأكيدًا منفصلًا.
+        </p>
         <SupplierForm supplier={initial} />
       </section>
     </main>

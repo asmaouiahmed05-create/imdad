@@ -74,10 +74,18 @@ export default function ProductionPage() {
             تابع أوامر الإنتاج التجريبية وحالتها.
           </p>
         </div>
-        <Button render={<Link href="/production/orders/new" />}>
-          <Plus aria-hidden="true" />
-          إنشاء أمر إنتاج
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            render={<Link href="/production/boms" />}
+          >
+            قوائم المواد المحفوظة
+          </Button>
+          <Button render={<Link href="/production/orders/new" />}>
+            <Plus aria-hidden="true" />
+            إنشاء أمر إنتاج
+          </Button>
+        </div>
       </section>
 
       <p

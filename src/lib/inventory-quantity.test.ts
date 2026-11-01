@@ -77,6 +77,7 @@ test("mocked transaction creates an inbound movement for positive initial stock"
     unit: "piece",
     quantity: 4.5,
     minQuantity: 1,
+    classification: "UNCLASSIFIED" as const,
   };
   await createProductWithInitialStock(tx, data);
 
@@ -109,6 +110,7 @@ test("mocked transaction omits a zero-quantity opening movement", async () => {
     unit: "piece",
     quantity: 0,
     minQuantity: 0,
+    classification: "UNCLASSIFIED",
   });
 
   assert.equal(movements.length, 0);
@@ -147,6 +149,7 @@ test("mocked transaction rolls back product creation when movement insertion fai
         unit: "piece",
         quantity: 1,
         minQuantity: 0,
+        classification: "UNCLASSIFIED",
       }),
     ),
     /movement insert failed/u,

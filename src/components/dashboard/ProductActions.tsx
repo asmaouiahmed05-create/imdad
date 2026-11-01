@@ -19,6 +19,10 @@ import {
   MAX_INVENTORY_DECIMAL_PLACES,
   MAX_INVENTORY_QUANTITY,
 } from "@/lib/inventory-quantity";
+import {
+  PRODUCT_CLASSIFICATION_LABELS,
+  PRODUCT_CLASSIFICATIONS,
+} from "@/lib/production-bom";
 
 const quantityStep = 10 ** -MAX_INVENTORY_DECIMAL_PLACES;
 
@@ -28,6 +32,7 @@ export type ProductActionsProduct = {
   sku: string;
   unit: string;
   minQuantity: number;
+  classification: (typeof PRODUCT_CLASSIFICATIONS)[number];
 };
 
 function EditProductDialog({ product }: { product: ProductActionsProduct }) {
@@ -131,6 +136,24 @@ function EditProductDialog({ product }: { product: ProductActionsProduct }) {
                 required
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`edit-${product.id}-classification`}>
+              تصنيف المنتج
+            </Label>
+            <select
+              id={`edit-${product.id}-classification`}
+              name="classification"
+              defaultValue={product.classification}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              required
+            >
+              {PRODUCT_CLASSIFICATIONS.map((classification) => (
+                <option key={classification} value={classification}>
+                  {PRODUCT_CLASSIFICATION_LABELS[classification]}
+                </option>
+              ))}
+            </select>
           </div>
           <p className="text-xs text-muted-foreground">
             تُعدَّل الكمية عبر حركات المخزون فقط، للحفاظ على سجل التتبع.

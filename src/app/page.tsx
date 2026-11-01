@@ -35,6 +35,7 @@ import {
 import { RecordMovementButton } from "@/components/dashboard/RecordMovementButton";
 import { RecentMovementsCard } from "@/components/dashboard/RecentMovementsCard";
 import { requirePagePermission } from "@/lib/authz";
+import { PRODUCT_CLASSIFICATION_LABELS } from "@/lib/production-bom";
 
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
   maximumFractionDigits: 2,
@@ -130,6 +131,7 @@ export default async function Home({
       unit: true,
       quantity: true,
       minQuantity: true,
+      classification: true,
     },
     orderBy: { createdAt: "desc" },
     skip: (currentPage - 1) * PAGE_SIZE,
@@ -276,6 +278,9 @@ export default async function Home({
                 الوحدة
               </TableHead>
               <TableHead className="text-start text-xs font-medium text-slate-400">
+                تصنيف المنتج
+              </TableHead>
+              <TableHead className="text-start text-xs font-medium text-slate-400">
                 الكمية
               </TableHead>
               <TableHead className="text-start text-xs font-medium text-slate-400">
@@ -293,7 +298,7 @@ export default async function Home({
             {products.length === 0 ? (
               <TableRow className="border-white/[0.06] hover:bg-transparent">
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="h-44 px-6 text-center"
                 >
                   <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
@@ -415,6 +420,9 @@ function ProductTableRow({ product }: { product: WarehouseProduct }) {
         {product.sku}
       </TableCell>
       <TableCell className="text-slate-400">{product.unit}</TableCell>
+      <TableCell className="text-slate-400">
+        {PRODUCT_CLASSIFICATION_LABELS[product.classification]}
+      </TableCell>
       <TableCell className="font-medium tabular-nums text-slate-200">
         {numberFormatter.format(product.quantity)}
       </TableCell>
@@ -436,6 +444,7 @@ function ProductTableRow({ product }: { product: WarehouseProduct }) {
             sku: product.sku,
             unit: product.unit,
             minQuantity: product.minQuantity,
+            classification: product.classification,
           }}
         />
       </TableCell>

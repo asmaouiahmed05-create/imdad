@@ -2,7 +2,13 @@ import type { Product } from "@prisma/client";
 
 export type WarehouseProduct = Pick<
   Product,
-  "id" | "name" | "sku" | "unit" | "quantity" | "minQuantity"
+  | "id"
+  | "name"
+  | "sku"
+  | "unit"
+  | "quantity"
+  | "minQuantity"
+  | "classification"
 >;
 
 export type StockStatusDatum = {

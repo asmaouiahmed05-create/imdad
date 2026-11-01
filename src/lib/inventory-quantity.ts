@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, ProductClassification } from "@prisma/client";
 
 export const MAX_INVENTORY_QUANTITY = 1_000_000_000;
 export const MAX_INVENTORY_DECIMAL_PLACES = 6;
@@ -44,6 +44,7 @@ type ProductWithInitialStock = {
   unit: string;
   quantity: number;
   minQuantity: number;
+  classification: ProductClassification;
 };
 
 export async function createProductWithInitialStock(

@@ -13,6 +13,10 @@ import {
   MAX_INVENTORY_DECIMAL_PLACES,
   MAX_INVENTORY_QUANTITY,
 } from "@/lib/inventory-quantity";
+import {
+  PRODUCT_CLASSIFICATION_LABELS,
+  PRODUCT_CLASSIFICATIONS,
+} from "@/lib/production-bom";
 
 const quantityStep = 10 ** -MAX_INVENTORY_DECIMAL_PLACES;
 
@@ -63,6 +67,22 @@ export function AddProductDialog() {
           <div className="space-y-2">
             <Label htmlFor="sku">الرمز (SKU)</Label>
             <Input id="sku" name="sku" required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="classification">تصنيف المنتج</Label>
+            <select
+              id="classification"
+              name="classification"
+              defaultValue="UNCLASSIFIED"
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              required
+            >
+              {PRODUCT_CLASSIFICATIONS.map((classification) => (
+                <option key={classification} value={classification}>
+                  {PRODUCT_CLASSIFICATION_LABELS[classification]}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

@@ -54,7 +54,6 @@ function supplierFields(formData: FormData) {
     email,
     address: optionalField(formData, "address", "العنوان", 300),
     notes: optionalField(formData, "notes", "الملاحظات", 2000),
-    isActive: formData.get("isActive") === "on",
   };
 }
 
@@ -106,6 +105,7 @@ function revalidatePurchasing(orderId?: string) {
   revalidatePath("/");
   revalidatePath("/reports");
   revalidatePath("/suppliers");
+  revalidatePath("/control-tower");
   revalidatePath("/purchase-orders");
   if (orderId) revalidatePath(`/purchase-orders/${orderId}`);
 }
@@ -123,7 +123,9 @@ export async function createSupplier(formData: FormData): Promise<ActionResult> 
 
   try {
     const supplier = supplierFields(formData);
-    const created = await prisma.supplier.create({ data: supplier });
+    const created = await prisma.supplier.create({
+      data: { ...supplier, isActive: true },
+    });
     revalidatePurchasing();
     return { ok: true, id: created.id };
   } catch (error) {
@@ -154,6 +156,35 @@ export async function updateSupplier(formData: FormData): Promise<ActionResult> 
       return { ok: false, error: "المورد غير موجود." };
     }
     return actionError(error, "تعذّر تحديث المورد. حاول مرة أخرى.");
+  }
+}
+
+export async function changeSupplierStatus(
+  formData: FormData,
+): Promise<ActionResult> {
+  await requirePermission("supplier.manage");
+
+  const id = field(formData, "id");
+  const status = field(formData, "status");
+  if (!id) return { ok: false, error: "المورد غير محدد." };
+  if (status !== "active" && status !== "inactive") {
+    return { ok: false, error: "حالة المورد غير صالحة." };
+  }
+
+  try {
+    await prisma.supplier.update({
+      where: { id },
+      data: { isActive: status === "active" },
+      select: { id: true },
+    });
+    revalidatePurchasing();
+    revalidatePath(`/suppliers/${id}`);
+    return { ok: true, id };
+  } catch (error) {
+    if (prismaErrorCode(error) === "P2025") {
+      return { ok: false, error: "المورد غير موجود." };
+    }
+    return actionError(error, "تعذّر تحديث حالة المورد. حاول مرة أخرى.");
   }
 }
 

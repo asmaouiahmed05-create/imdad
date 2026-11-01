@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "@/lib/db";
+import { hasPermission } from "@/lib/authorization";
 import { requirePagePermission } from "@/lib/authz";
 
 const dateFormatter = new Intl.DateTimeFormat("ar-DZ", {
@@ -33,7 +34,11 @@ export default async function PurchaseOrderDetailsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePagePermission("purchase_order.read");
+  const principal = await requirePagePermission("purchase_order.read");
+  const canEditDraft = hasPermission(principal.role, "purchase_order.edit_draft");
+  const canSubmit = hasPermission(principal.role, "purchase_order.submit");
+  const canCancel = hasPermission(principal.role, "purchase_order.cancel");
+  const canReceive = hasPermission(principal.role, "purchase_order.receive");
   await connection();
   const { id } = await params;
   const order = await prisma.purchaseOrder.findUnique({
@@ -77,13 +82,18 @@ export default async function PurchaseOrderDetailsPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {order.status === "DRAFT" && (
+          {order.status === "DRAFT" && canEditDraft && (
             <Button variant="outline" render={<Link href={`/purchase-orders/${id}/edit`} />}>
               <Pencil aria-hidden="true" />
               تعديل المسودة
             </Button>
           )}
-          <PurchaseOrderTransitions id={id} status={order.status} />
+          <PurchaseOrderTransitions
+            id={id}
+            status={order.status}
+            canSubmit={canSubmit}
+            canCancel={canCancel}
+          />
         </div>
       </div>
 
@@ -173,7 +183,7 @@ export default async function PurchaseOrderDetailsPage({
       </section>
 
       {(order.status === "SUBMITTED" ||
-        order.status === "PARTIALLY_RECEIVED") && (
+        order.status === "PARTIALLY_RECEIVED") && canReceive && (
         <section className="rounded-2xl border border-sky-400/10 bg-slate-900/75 p-5 sm:p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>

@@ -4,28 +4,66 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Boxes,
+  Activity,
+  Building2,
   Factory,
   FileSpreadsheet,
+  ShoppingBag,
   ShoppingCart,
   Truck,
   UserRoundCog,
   Warehouse,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const navItems = [
-  { label: "المخازن", icon: Warehouse, href: "/" },
-  { label: "التقارير", icon: FileSpreadsheet, href: "/reports" },
-  { label: "الموردون", icon: Truck, href: "/suppliers" },
-  { label: "أوامر الشراء", icon: ShoppingCart, href: "/purchase-orders" },
-  { label: "إدارة المستخدمين", icon: UserRoundCog, href: "/users" },
-  { label: "الإنتاج", icon: Factory, href: "/production" },
+const navGroups: {
+  label: string;
+  items: { label: string; icon: LucideIcon; href: string; featured?: boolean }[];
+}[] = [
+  {
+    label: "نظرة الإدارة",
+    items: [
+      {
+        label: "برج مراقبة سلسلة التوريد",
+        icon: Activity,
+        href: "/control-tower",
+        featured: true,
+      },
+    ],
+  },
+  {
+    label: "عمليات سلسلة التوريد",
+    items: [
+      { label: "الموردون", icon: Building2, href: "/suppliers" },
+      { label: "المشتريات", icon: ShoppingCart, href: "/purchase-orders" },
+      { label: "المخزون والمستودعات", icon: Warehouse, href: "/" },
+      { label: "الإنتاج والعمليات", icon: Factory, href: "/production" },
+      { label: "المبيعات وطلبات العملاء", icon: ShoppingBag, href: "/sales" },
+      { label: "التوزيع والتوصيل", icon: Truck, href: "/distribution" },
+    ],
+  },
+  {
+    label: "الإدارة والتحليلات",
+    items: [
+      {
+        label: "التقارير والتحليلات",
+        icon: FileSpreadsheet,
+        href: "/reports",
+      },
+      {
+        label: "إدارة المستخدمين والصلاحيات",
+        icon: UserRoundCog,
+        href: "/users",
+      },
+    ],
+  },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="border-b border-white/[0.07] bg-slate-900/90 px-4 py-4 md:sticky md:top-0 md:flex md:h-screen md:w-64 md:shrink-0 md:flex-col md:border-b-0 md:border-e md:px-5 md:py-6">
+    <aside className="border-b border-white/[0.07] bg-slate-900/90 px-4 py-4 md:sticky md:top-0 md:flex md:h-screen md:w-64 md:shrink-0 md:flex-col md:overflow-y-auto md:border-b-0 md:border-e md:px-5 md:py-6">
       <div className="flex items-center gap-3 px-1">
         <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-lg shadow-sky-950/40">
           <Boxes aria-hidden="true" className="size-5" />
@@ -38,45 +76,44 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="mt-7 hidden px-3 text-[10px] font-semibold tracking-[0.16em] text-slate-500 md:block">
-        القائمة الرئيسية
-      </div>
       <nav
         aria-label="القائمة الرئيسية"
-        className="mt-4 flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0"
+        className="mt-7 flex flex-col gap-4"
       >
-        {navItems.map(({ label, icon: Icon, href }) => {
-          const active = href === "/"
-            ? pathname === "/"
-            : Boolean(href && (pathname === href || pathname.startsWith(`${href}/`)));
-          return href ? (
-            <Link
-              key={label}
-              href={href}
-              aria-current={active ? "page" : undefined}
-              className={`flex min-h-11 shrink-0 items-center gap-3 rounded-xl px-3.5 text-sm transition md:w-full ${
-                active
-                  ? "bg-sky-500 font-semibold text-white shadow-lg shadow-sky-950/30"
-                  : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
-              }`}
-            >
-              <Icon aria-hidden="true" className="size-[18px]" />
-              <span>{label}</span>
-            </Link>
-          ) : (
-            <div
-              key={label}
-              aria-disabled="true"
-              className="flex min-h-11 shrink-0 items-center gap-3 rounded-xl px-3.5 text-sm text-slate-500 opacity-55 md:w-full"
-            >
-              <Icon aria-hidden="true" className="size-[18px]" />
-              <span className="whitespace-nowrap">{label}</span>
-              <span className="ms-auto rounded-full border border-slate-700/80 bg-slate-800/70 px-2 py-0.5 text-[10px] text-slate-400">
-                قريبًا
-              </span>
+        {navGroups.map(({ label: groupLabel, items }) => (
+          <section key={groupLabel} className="min-w-0">
+            <h2 className="mb-2 px-3 text-[10px] font-semibold tracking-wide text-slate-500">
+              {groupLabel}
+            </h2>
+            <div className="flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
+              {items.map(({ label, icon: Icon, href, featured = false }) => {
+                const active =
+                  href === "/"
+                    ? pathname === "/"
+                    : pathname === href || pathname.startsWith(`${href}/`);
+                const linkStyle = active
+                  ? featured
+                    ? "border-sky-400/30 bg-gradient-to-r from-sky-500 to-blue-600 font-semibold text-white shadow-lg shadow-sky-950/30"
+                    : "border-transparent bg-sky-500 font-semibold text-white shadow-lg shadow-sky-950/30"
+                  : featured
+                    ? "border-sky-400/20 bg-sky-400/[0.06] font-semibold text-sky-200 hover:bg-sky-400/[0.12]"
+                    : "border-transparent text-slate-400 hover:bg-white/[0.05] hover:text-white";
+
+                return (
+                  <Link
+                    key={label}
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex min-h-11 shrink-0 items-center gap-3 whitespace-nowrap rounded-xl border px-3.5 text-sm transition md:w-full ${linkStyle}`}
+                  >
+                    <Icon aria-hidden="true" className="size-[18px]" />
+                    <span>{label}</span>
+                  </Link>
+                );
+              })}
             </div>
-          );
-        })}
+          </section>
+        ))}
       </nav>
 
       <div className="mt-8 hidden rounded-2xl border border-sky-400/10 bg-gradient-to-br from-sky-400/[0.08] to-indigo-400/[0.03] p-4 md:block">

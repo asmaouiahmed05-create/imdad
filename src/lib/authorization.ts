@@ -8,6 +8,8 @@ export type AppRole = (typeof APP_ROLES)[number];
 
 export const APP_PERMISSIONS = [
   "inventory.read",
+  "production.bom.read",
+  "production.bom.manage",
   "product.create",
   "product.update",
   "product.delete",
@@ -29,6 +31,7 @@ export type AppPermission = (typeof APP_PERMISSIONS)[number];
 
 const READ_ONLY_PERMISSIONS = [
   "inventory.read",
+  "production.bom.read",
   "supplier.read",
   "purchase_order.read",
   "reports.read",
@@ -36,6 +39,7 @@ const READ_ONLY_PERMISSIONS = [
 
 const INVENTORY_OPERATOR_PERMISSIONS = [
   ...READ_ONLY_PERMISSIONS,
+  "production.bom.manage",
   "product.create",
   "product.update",
   "stock.move",

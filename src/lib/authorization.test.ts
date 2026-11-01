@@ -18,6 +18,7 @@ test("read-only users have only view and report-reading permissions", () => {
       hasPermission("read_only", permission),
       [
         "inventory.read",
+        "production.bom.read",
         "supplier.read",
         "purchase_order.read",
         "reports.read",
@@ -31,6 +32,9 @@ test("inventory operators can operate inventory and export but cannot administer
   assert.equal(hasPermission("inventory_operator", "product.create"), true);
   assert.equal(hasPermission("inventory_operator", "product.update"), true);
   assert.equal(hasPermission("inventory_operator", "stock.move"), true);
+  assert.equal(hasPermission("read_only", "production.bom.read"), true);
+  assert.equal(hasPermission("read_only", "production.bom.manage"), false);
+  assert.equal(hasPermission("inventory_operator", "production.bom.manage"), true);
   assert.equal(hasPermission("inventory_operator", "supplier.manage"), true);
   assert.equal(hasPermission("inventory_operator", "purchase_order.receive"), true);
   assert.equal(hasPermission("inventory_operator", "reports.export"), true);

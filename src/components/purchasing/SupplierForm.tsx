@@ -15,7 +15,6 @@ export type SupplierFormValue = {
   email: string | null;
   address: string | null;
   notes: string | null;
-  isActive: boolean;
 };
 
 export function SupplierForm({ supplier }: { supplier?: SupplierFormValue }) {
@@ -35,7 +34,7 @@ export function SupplierForm({ supplier }: { supplier?: SupplierFormValue }) {
         setError(result.error ?? "تعذّر حفظ المورد.");
         return;
       }
-      router.push(`/suppliers/${result.id}`);
+      router.push(`/suppliers/${result.id}?saved=1`);
       router.refresh();
     });
   }
@@ -43,83 +42,94 @@ export function SupplierForm({ supplier }: { supplier?: SupplierFormValue }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {supplier && <input type="hidden" name="id" value={supplier.id} />}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="supplier-name">اسم المورد *</Label>
-          <Input
-            id="supplier-name"
-            name="name"
-            required
-            maxLength={120}
-            defaultValue={supplier?.name ?? ""}
-            autoComplete="organization"
-          />
+      <section className="space-y-4 rounded-xl border border-white/[0.07] bg-slate-950/40 p-4 sm:p-5">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-100">بيانات المورد</h3>
+          <p className="mt-1 text-xs text-slate-400">
+            الحقول المعلّمة بنجمة مطلوبة.
+          </p>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="supplier-contact">الشخص المسؤول</Label>
-          <Input
-            id="supplier-contact"
-            name="contactPerson"
-            maxLength={120}
-            defaultValue={supplier?.contactPerson ?? ""}
-            autoComplete="name"
-          />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="supplier-name">اسم المورد <span aria-hidden="true">*</span></Label>
+            <Input
+              id="supplier-name"
+              name="name"
+              required
+              aria-required="true"
+              maxLength={120}
+              defaultValue={supplier?.name ?? ""}
+              autoComplete="organization"
+            />
+            <p className="text-xs text-slate-500">يجب أن يكون الاسم فريدًا.</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="supplier-contact">الشخص المسؤول</Label>
+            <Input
+              id="supplier-contact"
+              name="contactPerson"
+              maxLength={120}
+              defaultValue={supplier?.contactPerson ?? ""}
+              autoComplete="name"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="supplier-phone">رقم الهاتف</Label>
+            <Input
+              id="supplier-phone"
+              name="phone"
+              type="tel"
+              maxLength={40}
+              defaultValue={supplier?.phone ?? ""}
+              autoComplete="tel"
+              dir="auto"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="supplier-email">البريد الإلكتروني</Label>
+            <Input
+              id="supplier-email"
+              name="email"
+              type="email"
+              maxLength={254}
+              defaultValue={supplier?.email ?? ""}
+              autoComplete="email"
+              dir="ltr"
+            />
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="supplier-phone">رقم الهاتف</Label>
-          <Input
-            id="supplier-phone"
-            name="phone"
-            type="tel"
-            maxLength={40}
-            defaultValue={supplier?.phone ?? ""}
-            autoComplete="tel"
-            dir="auto"
-          />
+      </section>
+      <section className="space-y-4 rounded-xl border border-white/[0.07] bg-slate-950/40 p-4 sm:p-5">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-100">العنوان والملاحظات</h3>
+          <p className="mt-1 text-xs text-slate-400">
+            معلومات إضافية لتسهيل التواصل وإدارة التوريد.
+          </p>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="supplier-email">البريد الإلكتروني</Label>
-          <Input
-            id="supplier-email"
-            name="email"
-            type="email"
-            maxLength={254}
-            defaultValue={supplier?.email ?? ""}
-            autoComplete="email"
-            dir="ltr"
-          />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="supplier-address">العنوان</Label>
+            <Input
+              id="supplier-address"
+              name="address"
+              maxLength={300}
+              defaultValue={supplier?.address ?? ""}
+              autoComplete="street-address"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="supplier-notes">ملاحظات</Label>
+            <textarea
+              id="supplier-notes"
+              name="notes"
+              maxLength={2000}
+              defaultValue={supplier?.notes ?? ""}
+              rows={4}
+              className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+          </div>
         </div>
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="supplier-address">العنوان</Label>
-          <Input
-            id="supplier-address"
-            name="address"
-            maxLength={300}
-            defaultValue={supplier?.address ?? ""}
-            autoComplete="street-address"
-          />
-        </div>
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="supplier-notes">ملاحظات</Label>
-          <textarea
-            id="supplier-notes"
-            name="notes"
-            maxLength={2000}
-            defaultValue={supplier?.notes ?? ""}
-            rows={4}
-            className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          />
-        </div>
-      </div>
-      <label className="flex w-fit items-center gap-2 text-sm text-slate-300">
-        <input
-          name="isActive"
-          type="checkbox"
-          defaultChecked={supplier?.isActive ?? true}
-          className="size-4 accent-sky-500"
-        />
-        مورد نشط ويمكن اختياره في أوامر الشراء
-      </label>
+      </section>
       {error && (
         <p role="alert" className="text-sm text-rose-300">
           {error}

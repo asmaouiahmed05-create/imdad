@@ -5,6 +5,7 @@ import { Pencil, ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PurchaseOrderStatusBadge } from "@/components/purchasing/PurchaseOrderStatusBadge";
+import { SupplierStatusControl } from "@/components/purchasing/SupplierStatusControl";
 import {
   Table,
   TableBody,
@@ -14,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "@/lib/db";
+import { hasPermission } from "@/lib/authorization";
 import { requirePagePermission } from "@/lib/authz";
 
 const dateFormatter = new Intl.DateTimeFormat("ar-DZ", {
@@ -24,12 +26,18 @@ const numberFormatter = new Intl.NumberFormat("ar-DZ");
 
 export default async function SupplierDetailsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePagePermission("supplier.read");
+  const principal = await requirePagePermission("supplier.read");
+  const canManage = hasPermission(principal.role, "supplier.manage");
+  const canCreatePurchaseOrder = hasPermission(principal.role, "purchase_order.create");
   await connection();
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
+  const savedValue = query.saved;
+  const saved = (Array.isArray(savedValue) ? savedValue[0] : savedValue) === "1";
   const supplier = await prisma.supplier.findUnique({
     where: { id },
     include: {
@@ -61,11 +69,21 @@ export default async function SupplierDetailsPage({
           </h2>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" render={<Link href={`/suppliers/${id}/edit`} />}>
-            <Pencil aria-hidden="true" />
-            تعديل المورد
-          </Button>
-          {supplier.isActive && (
+          {canManage && (
+            <>
+              <Button variant="outline" render={<Link href={`/suppliers/${id}/edit`} />}>
+                <Pencil aria-hidden="true" />
+                تعديل البيانات
+              </Button>
+              <SupplierStatusControl
+                supplierId={supplier.id}
+                supplierName={supplier.name}
+                isActive={supplier.isActive}
+                purchaseOrderCount={supplier._count.purchaseOrders}
+              />
+            </>
+          )}
+          {supplier.isActive && canCreatePurchaseOrder && (
             <Button render={<Link href={`/purchase-orders/new?supplierId=${encodeURIComponent(id)}`} />}>
               <ShoppingCart aria-hidden="true" />
               إنشاء أمر شراء
@@ -73,6 +91,15 @@ export default async function SupplierDetailsPage({
           )}
         </div>
       </div>
+
+      {saved && (
+        <p
+          role="status"
+          className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.07] px-4 py-3 text-sm text-emerald-300"
+        >
+          تم حفظ بيانات المورد بنجاح.
+        </p>
+      )}
 
       <section className="grid gap-4 rounded-2xl border border-white/[0.07] bg-slate-900/75 p-5 sm:grid-cols-2 lg:grid-cols-3">
         <div>
@@ -107,7 +134,7 @@ export default async function SupplierDetailsPage({
           <p className="mt-2 text-sm text-slate-200">{supplier.address || "—"}</p>
         </div>
         <div>
-          <p className="text-xs text-slate-500">عدد أوامر الشراء</p>
+          <p className="text-xs text-slate-500">إجمالي أوامر الشراء المرتبطة</p>
           <p className="mt-2 text-sm text-slate-200">
             {numberFormatter.format(supplier._count.purchaseOrders)}
           </p>

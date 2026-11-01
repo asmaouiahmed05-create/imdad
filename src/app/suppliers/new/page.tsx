@@ -18,7 +18,10 @@ export default async function NewSupplierPage() {
         <p className="mb-2 text-xs font-semibold tracking-[0.16em] text-sky-300">
           سجل الموردين
         </p>
-        <h2 className="mb-6 text-xl font-semibold text-white">إضافة مورد</h2>
+        <h2 className="mb-2 text-xl font-semibold text-white">إضافة مورد</h2>
+        <p className="mb-6 text-sm text-slate-400">
+          تُضاف السجلات الجديدة بحالة نشطة. يمكن تغيير الحالة لاحقًا من صفحة التفاصيل.
+        </p>
         <SupplierForm />
       </section>
     </main>

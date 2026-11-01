@@ -123,6 +123,7 @@ export default async function ReportsPage({
         unit: true,
         quantity: true,
         minQuantity: true,
+        classification: true,
         createdAt: true,
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
