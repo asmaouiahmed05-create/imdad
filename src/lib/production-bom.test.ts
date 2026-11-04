@@ -8,6 +8,7 @@ import {
   isProductClassification,
   isRecordId,
   nextBomRevision,
+  snapshotFinishedProduct,
   validateBomComponents,
 } from "./production-bom.ts";
 
@@ -38,6 +39,35 @@ test("product classification values and BOM roles are explicit", () => {
     classificationCompatibleWithBomReferences("FINISHED_GOOD", 0, 1),
     false,
   );
+  assert.equal(
+    classificationCompatibleWithBomReferences("BOTH", 0, 0),
+    true,
+  );
+  assert.equal(
+    classificationCompatibleWithBomReferences("MATERIAL", 0, 2),
+    true,
+  );
+  assert.equal(
+    classificationCompatibleWithBomReferences("FINISHED_GOOD", 3, 0),
+    true,
+  );
+  assert.equal(
+    classificationCompatibleWithBomReferences("UNCLASSIFIED", 1, 0),
+    false,
+  );
+});
+
+test("released BOM product identity is a value snapshot", () => {
+  const product = { name: "Chair", sku: "CHAIR-1", unit: "piece" };
+  const releasedSnapshot = snapshotFinishedProduct(product);
+  product.name = "Renamed chair";
+  product.sku = "CHAIR-2";
+  product.unit = "set";
+  assert.deepEqual(releasedSnapshot, {
+    finishedProductName: "Chair",
+    finishedProductSku: "CHAIR-1",
+    finishedProductUnit: "piece",
+  });
 });
 
 test("BOM component validation requires positive amounts and distinct products", () => {

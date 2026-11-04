@@ -102,10 +102,14 @@ export default async function BillOfMaterialsPage() {
                 <TableRow key={bom.id} className="border-white/[0.05]">
                   <TableCell>
                     <span className="font-medium text-white">
-                      {bom.finishedProduct.name}
+                      {bom.status === "DRAFT"
+                        ? bom.finishedProduct.name
+                        : bom.finishedProductName}
                     </span>
                     <span className="ms-2 font-mono text-xs text-slate-500">
-                      {bom.finishedProduct.sku}
+                      {bom.status === "DRAFT"
+                        ? bom.finishedProduct.sku
+                        : bom.finishedProductSku}
                     </span>
                   </TableCell>
                   <TableCell className="tabular-nums text-slate-300">

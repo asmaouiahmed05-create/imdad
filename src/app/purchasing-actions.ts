@@ -106,6 +106,7 @@ function revalidatePurchasing(orderId?: string) {
   revalidatePath("/reports");
   revalidatePath("/suppliers");
   revalidatePath("/control-tower");
+  revalidatePath("/production");
   revalidatePath("/purchase-orders");
   if (orderId) revalidatePath(`/purchase-orders/${orderId}`);
 }

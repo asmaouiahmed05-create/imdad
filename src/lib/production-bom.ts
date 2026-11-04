@@ -31,6 +31,11 @@ export type BomComponentInput = {
   materialProductId: unknown;
   quantityPerUnit: unknown;
 };
+export type FinishedProductSnapshot = {
+  finishedProductName: string;
+  finishedProductSku: string;
+  finishedProductUnit: string;
+};
 const MAX_BOM_REVISION = 2_147_483_647;
 
 export type ValidBomComponentInput = {
@@ -63,6 +68,18 @@ export function classificationAllowsBomUse(
     (use === "material" && classification === "MATERIAL") ||
     (use === "finished" && classification === "FINISHED_GOOD")
   );
+}
+
+export function snapshotFinishedProduct(product: {
+  name: string;
+  sku: string;
+  unit: string;
+}): FinishedProductSnapshot {
+  return {
+    finishedProductName: product.name,
+    finishedProductSku: product.sku,
+    finishedProductUnit: product.unit,
+  };
 }
 
 export function classificationCompatibleWithBomReferences(

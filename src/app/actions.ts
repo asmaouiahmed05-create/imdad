@@ -59,6 +59,7 @@ export async function createProduct(
     });
 
     revalidatePath("/");
+    revalidatePath("/production");
     return { ok: true };
   } catch (e) {
     if (prismaErrorCode(e) === "P2002") {
@@ -125,6 +126,7 @@ export async function recordMovement(
     });
 
     revalidatePath("/");
+    revalidatePath("/production");
     return { ok: true };
   } catch (e) {
     if (e instanceof MovementError) return { ok: false, error: e.message };
@@ -225,6 +227,7 @@ export async function updateProduct(
     if (!result.ok) return result;
     revalidatePath("/");
     revalidatePath("/production/boms");
+    revalidatePath("/production");
     return { ok: true };
   } catch (e) {
     const errorCode = prismaErrorCode(e);
@@ -273,6 +276,7 @@ export async function deleteProduct(
     }
     await prisma.product.delete({ where: { id } });
     revalidatePath("/");
+    revalidatePath("/production");
     return { ok: true };
   } catch (e) {
     if (prismaErrorCode(e) === "P2003") {

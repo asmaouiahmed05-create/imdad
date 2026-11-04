@@ -23,7 +23,8 @@ npm run test:admin-bootstrap
 ```
 
 The security-boundary test runner uses Node.js 22.15 or later for native
-module hooks and module mocking.
+module hooks and module mocking. It covers report exports, managed-user
+actions, and production/BOM management actions.
 
 The opt-in PostgreSQL integration workflow requires a separately approved,
 dedicated disposable local database. Follow [the PostgreSQL test guide](./tests/postgres/README.md);
@@ -68,6 +69,23 @@ arguments, source files, or chat. The command serializes concurrent attempts,
 refuses any non-Neon endpoint or non-empty user table, verifies the persisted
 administrator role, and does not print credentials. Remove the temporary
 bootstrap inputs from the secret manager after successful provisioning.
+
+## Production workflow
+
+Production orders are stored in PostgreSQL and reference a released BOM
+revision. Starting an order checks current component stock; completion
+recalculates requirements on the server and records component consumption,
+finished-product stock, stock movements, and the completed order in one
+transaction. The order can record a smaller actual output quantity than
+planned, with material consumption calculated for that actual quantity.
+Released BOM revisions preserve the finished product's name, SKU, and unit;
+the migration backfills those snapshots for revisions that already exist.
+Production read and management access use separate server-enforced
+`production.order.read` and `production.order.manage` permissions.
+
+The additive `20261104170000_production_orders` migration must be reviewed and
+approved before these database-backed pages can run against an existing
+database. No migration is applied automatically by this code.
 
 ## Production and release checklist
 

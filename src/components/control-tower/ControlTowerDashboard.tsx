@@ -16,16 +16,16 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { PurchaseOrderStatusBadge } from "@/components/purchasing/PurchaseOrderStatusBadge";
 import { useDistributionDemo } from "@/components/distribution/DistributionDemoProvider";
-import { useProductionDemo } from "@/components/production/ProductionDemoProvider";
 import { useSalesDemo } from "@/components/sales/SalesDemoProvider";
 import {
   DELIVERY_STATUS_CLASSES,
   DELIVERY_STATUS_LABELS,
 } from "@/lib/delivery-demo";
 import {
-  PRODUCTION_STATUS_CLASSES,
-  PRODUCTION_STATUS_LABELS,
-} from "@/lib/production-demo";
+  PRODUCTION_ORDER_STATUS_CLASSES,
+  PRODUCTION_ORDER_STATUS_LABELS,
+  type ProductionOrderStatusValue,
+} from "@/lib/production-orders";
 import {
   SALES_STATUS_CLASSES,
   SALES_STATUS_LABELS,
@@ -56,6 +56,17 @@ type TowerData = {
       status: PurchaseOrderStatus;
       createdAt: Date;
       supplier: { name: string };
+    }>;
+  };
+  production: {
+    orderCounts: Record<ProductionOrderStatusValue, number>;
+    recentOrders: Array<{
+      id: string;
+      orderNumber: string;
+      status: ProductionOrderStatusValue;
+      plannedQuantity: string;
+      finishedProductName: string;
+      revision: number;
     }>;
   };
 };
@@ -133,8 +144,6 @@ function DashboardPanel({
 }
 
 export function ControlTowerDashboard({ data }: { data: TowerData }) {
-  const { orders: productionOrders, ready: productionReady, error: productionError } =
-    useProductionDemo();
   const { orders: salesOrders, ready: salesReady, error: salesError } =
     useSalesDemo();
   const {
@@ -148,9 +157,9 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
   const activePurchaseOrders =
     data.procurement.purchaseOrderCounts.SUBMITTED +
     data.procurement.purchaseOrderCounts.PARTIALLY_RECEIVED;
-  const activeProductionCount = productionOrders.filter(
-    (order) => order.status === "PLANNED" || order.status === "IN_PROGRESS",
-  ).length;
+  const activeProductionCount =
+    data.production.orderCounts.DRAFT +
+    data.production.orderCounts.IN_PROGRESS;
   const activeSalesCount = salesOrders.filter(
     (order) =>
       order.status !== "DELIVERED" && order.status !== "CANCELLED",
@@ -207,10 +216,8 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
           accent="violet"
         />
         <StatCard
-          label="أوامر إنتاج نشطة · تجريبي"
-          value={
-            productionReady ? numberFormatter.format(activeProductionCount) : "—"
-          }
+          label="أوامر إنتاج نشطة · نظام"
+          value={numberFormatter.format(activeProductionCount)}
           icon={Factory}
           accent="amber"
         />
@@ -399,20 +406,14 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
         <DashboardPanel>
           <SectionHeading
             title="الإنتاج"
-            subtitle="حالة أوامر الإنتاج في بيانات العرض المحلية."
+            subtitle="حالة أوامر الإنتاج المسجلة في النظام."
             href="/production"
             linkLabel="لوحة الإنتاج"
-            demo
           />
-          {productionError && (
-            <p role="alert" className="m-4 text-sm text-rose-300">
-              {productionError}
-            </p>
-          )}
           <div className="grid grid-cols-3 gap-3 p-4">
             {(
               [
-                ["PLANNED", "مخطط"],
+                ["DRAFT", "مسودة"],
                 ["IN_PROGRESS", "قيد الإنتاج"],
                 ["COMPLETED", "مكتمل"],
               ] as const
@@ -423,28 +424,18 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
               >
                 <p className="text-xs text-slate-400">{label}</p>
                 <p className="mt-2 text-xl font-semibold text-white">
-                  {productionReady
-                    ? numberFormatter.format(
-                        productionOrders.filter(
-                          (order) => order.status === status,
-                        ).length,
-                      )
-                    : "—"}
+                  {numberFormatter.format(data.production.orderCounts[status])}
                 </p>
               </div>
             ))}
           </div>
-          {!productionReady ? (
-            <p className="px-5 py-5 text-sm text-slate-400">
-              جارٍ تحميل بيانات الإنتاج التجريبية...
-            </p>
-          ) : productionOrders.length === 0 ? (
+          {data.production.recentOrders.length === 0 ? (
             <p className="px-5 py-6 text-center text-sm text-slate-400">
-              لا توجد أوامر إنتاج في بيانات العرض.
+              لا توجد أوامر إنتاج مسجلة.
             </p>
           ) : (
             <div className="divide-y divide-white/[0.05]">
-              {productionOrders.slice(0, 4).map((order) => (
+              {data.production.recentOrders.map((order) => (
                 <Link
                   key={order.id}
                   href={`/production/orders/${order.id}`}
@@ -452,17 +443,18 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
                 >
                   <div>
                     <p className="font-mono text-xs text-sky-300" dir="ltr">
-                      {order.number}
+                      {order.orderNumber}
                     </p>
                     <p className="mt-1 text-sm text-slate-300">
-                      {order.product} · {numberFormatter.format(order.quantity)}
+                      {order.finishedProductName} ·{" "}
+                      {numberFormatter.format(Number(order.plannedQuantity))}
                     </p>
                   </div>
                   <Badge
                     variant="outline"
-                    className={PRODUCTION_STATUS_CLASSES[order.status]}
+                    className={PRODUCTION_ORDER_STATUS_CLASSES[order.status]}
                   >
-                    {PRODUCTION_STATUS_LABELS[order.status]}
+                    {PRODUCTION_ORDER_STATUS_LABELS[order.status]}
                   </Badge>
                 </Link>
               ))}

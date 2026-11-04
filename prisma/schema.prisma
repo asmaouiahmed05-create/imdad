@@ -47,17 +47,29 @@ enum BillOfMaterialsStatus {
   RETIRED
 }
 
+enum ProductionOrderStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// Positive BOM/revision/order quantity and order-date CHECK constraints are maintained in SQL migrations because Prisma schema syntax cannot declare them.
 model BillOfMaterials {
-  id                String                     @id @default(cuid())
-  finishedProductId String
-  finishedProduct   Product                    @relation("BOMFinishedProduct", fields: [finishedProductId], references: [id], onDelete: Restrict)
-  revision          Int
-  status            BillOfMaterialsStatus      @default(DRAFT)
-  components        BillOfMaterialsComponent[]
-  createdAt         DateTime                   @default(now())
-  updatedAt         DateTime                   @updatedAt
-  releasedAt        DateTime?
-  retiredAt         DateTime?
+  id                  String                     @id @default(cuid())
+  finishedProductId   String
+  finishedProduct     Product                    @relation("BOMFinishedProduct", fields: [finishedProductId], references: [id], onDelete: Restrict)
+  finishedProductName String
+  finishedProductSku  String
+  finishedProductUnit String
+  revision            Int
+  status              BillOfMaterialsStatus      @default(DRAFT)
+  components          BillOfMaterialsComponent[]
+  productionOrders    ProductionOrder[]
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  releasedAt          DateTime?
+  retiredAt           DateTime?
 
   @@unique([finishedProductId, revision])
   @@index([finishedProductId, status, revision])
@@ -92,10 +104,36 @@ model StockMovement {
   purchaseOrderLine   PurchaseOrderLine?    @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
   receiptId           String?
   receipt             PurchaseOrderReceipt? @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  productionOrderId   String?
+  productionOrder     ProductionOrder?      @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
 
+  @@unique([productionOrderId, productId, type])
   @@index([productId])
   @@index([purchaseOrderLineId])
   @@index([receiptId])
+  @@index([productionOrderId])
+}
+
+model ProductionOrder {
+  id                     String                @id @default(cuid())
+  orderNumber            String                @unique
+  status                 ProductionOrderStatus @default(DRAFT)
+  bomId                  String
+  bom                    BillOfMaterials       @relation(fields: [bomId], references: [id], onDelete: Restrict)
+  plannedQuantity        Decimal               @db.Decimal(18, 6)
+  producedQuantity       Decimal?              @db.Decimal(18, 6)
+  plannedStartDate       DateTime?
+  expectedCompletionDate DateTime?
+  notes                  String?
+  movements              StockMovement[]
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  startedAt              DateTime?
+  completedAt            DateTime?
+  cancelledAt            DateTime?
+
+  @@index([status, createdAt])
+  @@index([bomId, createdAt])
 }
 
 model Supplier {

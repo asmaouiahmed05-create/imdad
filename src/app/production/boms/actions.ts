@@ -10,6 +10,7 @@ import {
   getBomStatusTransition,
   isRecordId,
   nextBomRevision,
+  snapshotFinishedProduct,
   validateBomComponents,
 } from "@/lib/production-bom";
 
@@ -168,6 +169,10 @@ export async function createBom(
         finishedProductId,
         parsed.components,
       );
+      const finishedProduct = await tx.product.findUniqueOrThrow({
+        where: { id: finishedProductId },
+        select: { name: true, sku: true, unit: true },
+      });
       const latestRevision = await tx.billOfMaterials.aggregate({
         where: { finishedProductId },
         _max: { revision: true },
@@ -175,6 +180,7 @@ export async function createBom(
       const bom = await tx.billOfMaterials.create({
         data: {
           finishedProductId,
+          ...snapshotFinishedProduct(finishedProduct),
           revision: nextBomRevision(latestRevision._max.revision),
           components: {
             create: componentSnapshots.map((component) => ({
@@ -246,6 +252,14 @@ export async function updateBom(
         existing.finishedProductId,
         parsed.components,
       );
+      const finishedProduct = await tx.product.findUniqueOrThrow({
+        where: { id: existing.finishedProductId },
+        select: { name: true, sku: true, unit: true },
+      });
+      await tx.billOfMaterials.update({
+        where: { id },
+        data: snapshotFinishedProduct(finishedProduct),
+      });
       await tx.billOfMaterialsComponent.deleteMany({ where: { bomId: id } });
       await tx.billOfMaterialsComponent.createMany({
         data: componentSnapshots.map((component) => ({
@@ -340,7 +354,13 @@ export async function transitionBom(
               ],
             },
           },
-          select: { id: true, classification: true },
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            unit: true,
+            classification: true,
+          },
         });
         const productsById = new Map(
           products.map((product) => [product.id, product]),
@@ -370,6 +390,7 @@ export async function transitionBom(
             "يوجد مكوّن لا يسمح تصنيفه باعتماد قائمة المواد",
           );
         }
+        Object.assign(data, snapshotFinishedProduct(finishedProduct));
       }
 
       await tx.billOfMaterials.update({ where: { id }, data });

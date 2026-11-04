@@ -40,6 +40,12 @@ export default async function BillOfMaterialsDetailsPage({
     },
   });
   if (!bom) notFound();
+  const finishedProductName =
+    bom.status === "DRAFT" ? bom.finishedProduct.name : bom.finishedProductName;
+  const finishedProductSku =
+    bom.status === "DRAFT" ? bom.finishedProduct.sku : bom.finishedProductSku;
+  const finishedProductUnit =
+    bom.status === "DRAFT" ? bom.finishedProduct.unit : bom.finishedProductUnit;
 
   return (
     <main className="mx-auto w-full max-w-[1300px] space-y-6 p-4 sm:p-6 lg:p-8">
@@ -57,11 +63,11 @@ export default async function BillOfMaterialsDetailsPage({
               قائمة مواد محفوظة في قاعدة البيانات
             </p>
             <h1 className="text-2xl font-semibold text-white">
-              {bom.finishedProduct.name}
+              {finishedProductName}
             </h1>
             <p className="mt-2 text-sm text-slate-400">
-              {bom.finishedProduct.sku} · المراجعة {bom.revision} · لكل{" "}
-              {bom.finishedProduct.unit} واحد
+              {finishedProductSku} · المراجعة {bom.revision} · لكل{" "}
+              {finishedProductUnit} واحد
             </p>
             <Badge
               variant="outline"
