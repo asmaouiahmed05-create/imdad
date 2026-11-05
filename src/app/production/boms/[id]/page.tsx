@@ -130,8 +130,8 @@ export default async function BillOfMaterialsDetailsPage({
       </section>
 
       <p className="rounded-xl border border-amber-400/20 bg-amber-400/[0.05] px-4 py-3 text-sm leading-6 text-amber-100">
-        المرحلة الحالية تدير تصنيفات المنتجات ومراجعات قوائم المواد فقط. تخطيط
-        الإنتاج واستهلاك المواد وتسجيل المخرجات وتحديث المخزون غير مفعل.
+        تُستخدم هذه المراجعة لتخطيط أوامر الإنتاج؛ لا تغيّر بيانات قائمة المواد
+        رصيد المخزون. تُسجّل حركات المواد والمخرجات عند إكمال أمر إنتاج بنجاح.
       </p>
     </main>
   );
