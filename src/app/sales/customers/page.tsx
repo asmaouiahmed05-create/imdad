@@ -1,76 +1,209 @@
 import Link from "next/link";
-import { ArrowRight, Building2, MapPin, Phone } from "lucide-react";
-import { DEMO_CUSTOMERS } from "@/lib/sales-demo";
+import { connection } from "next/server";
+import { ArrowRight, Plus, Search } from "lucide-react";
+import type { Prisma } from "@prisma/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { hasPermission } from "@/lib/authorization";
+import { requirePagePermission } from "@/lib/authz";
+import { prisma } from "@/lib/db";
 
-export default function SalesCustomersPage() {
+const PAGE_SIZE = 15;
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+function firstValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function listHref(query: string, page: number) {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (page > 1) params.set("page", String(page));
+  const search = params.toString();
+  return search ? `/sales/customers?${search}` : "/sales/customers";
+}
+
+export default async function SalesCustomersPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const principal = await requirePagePermission("sales.read");
+  await connection();
+  const params = await searchParams;
+  const query = (firstValue(params.q) ?? "").trim().slice(0, 100);
+  const rawPage = firstValue(params.page) ?? "";
+  const parsedPage = /^\d+$/u.test(rawPage) ? Number(rawPage) : 1;
+  const page =
+    Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const where: Prisma.CustomerWhereInput = query
+    ? {
+        OR: [
+          { name: { contains: query, mode: "insensitive" } },
+          { contactPerson: { contains: query, mode: "insensitive" } },
+          { phone: { contains: query, mode: "insensitive" } },
+          { email: { contains: query, mode: "insensitive" } },
+          { city: { contains: query, mode: "insensitive" } },
+        ],
+      }
+    : {};
+
+  const [total, count] = await Promise.all([
+    prisma.customer.count(),
+    prisma.customer.count({ where }),
+  ]);
+  const totalPages = Math.ceil(count / PAGE_SIZE);
+  const currentPage = totalPages === 0 ? 1 : Math.min(page, totalPages);
+  const customers = await prisma.customer.findMany({
+    where,
+    select: {
+      id: true,
+      name: true,
+      contactPerson: true,
+      phone: true,
+      email: true,
+      city: true,
+      address: true,
+      isActive: true,
+      _count: { select: { orders: true } },
+    },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    skip: (currentPage - 1) * PAGE_SIZE,
+    take: PAGE_SIZE,
+  });
+  const canManage = hasPermission(principal.role, "sales.customer.manage");
+
   return (
     <main className="mx-auto w-full max-w-[1400px] space-y-6 p-4 sm:p-6 lg:p-8">
-      <div>
-        <Link
-          href="/sales"
-          className="mb-4 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white"
-        >
-          <ArrowRight aria-hidden="true" className="size-4" />
-          لوحة المبيعات
-        </Link>
-        <p className="mb-2 text-xs font-semibold tracking-[0.18em] text-sky-300">
-          المبيعات
-        </p>
-        <h2 className="text-xl font-semibold text-white sm:text-2xl">
-          العملاء
-        </h2>
-        <p className="mt-2 text-sm text-slate-400">
-          جهات اتصال تجريبية لاستخدامها في طلبات العملاء.
-        </p>
-      </div>
-
-      <p
-        role="note"
-        className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-sm leading-6 text-amber-200"
-      >
-        هذه بيانات عرض ثابتة، ولا تمثل سجلات عملاء محفوظة في النظام.
-      </p>
-
-      <section
-        aria-label="قائمة العملاء"
-        className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
-      >
-        {DEMO_CUSTOMERS.map((customer) => (
-          <article
-            key={customer.id}
-            className="rounded-2xl border border-white/[0.07] bg-slate-900/75 p-5"
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <Link
+            href="/sales"
+            className="mb-4 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white"
           >
-            <div className="flex items-start gap-3">
-              <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-sky-400/10 text-sky-300">
-                <Building2 aria-hidden="true" className="size-5" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold leading-6 text-white">
-                  {customer.name}
-                </h3>
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-400">
-                  <MapPin aria-hidden="true" className="size-4 shrink-0" />
-                  {customer.city}
-                </p>
-              </div>
+            <ArrowRight aria-hidden="true" className="size-4" />
+            لوحة المبيعات
+          </Link>
+          <p className="mb-2 text-xs font-semibold tracking-[0.18em] text-sky-300">
+            المبيعات
+          </p>
+          <h1 className="text-xl font-semibold text-white sm:text-2xl">العملاء</h1>
+          <p className="mt-2 text-sm text-slate-400">
+            بيانات العملاء المرتبطة بطلباتهم المسجلة.
+          </p>
+        </div>
+        {canManage && (
+          <Button render={<Link href="/sales/customers/new" />}>
+            <Plus aria-hidden="true" />
+            إضافة عميل
+          </Button>
+        )}
+      </header>
+
+      <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-900/75">
+        <form
+          method="get"
+          action="/sales/customers"
+          className="flex flex-wrap items-end gap-3 border-b border-white/[0.06] p-4 sm:p-5"
+        >
+          <label className="grid min-w-56 flex-1 gap-1.5 text-xs text-slate-400">
+            ابحث بالاسم أو جهة الاتصال أو الهاتف أو المدينة
+            <div className="relative">
+              <Search
+                aria-hidden="true"
+                className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
+              />
+              <Input
+                name="q"
+                type="search"
+                maxLength={100}
+                defaultValue={query}
+                className="h-10 border-white/[0.08] bg-slate-950 ps-10"
+              />
             </div>
-            <div className="mt-5 space-y-2 border-t border-white/[0.06] pt-4 text-sm">
-              <p className="flex items-center gap-2 text-slate-300" dir="ltr">
-                <Phone aria-hidden="true" className="size-4 text-slate-500" />
-                {customer.phone}
-              </p>
-              <p className="break-all text-slate-400" dir="ltr">
-                {customer.email}
-              </p>
+          </label>
+          <Button type="submit" variant="outline" className="h-10">
+            بحث
+          </Button>
+        </form>
+
+        {customers.length === 0 ? (
+          <div className="px-5 py-12 text-center">
+            <p className="font-medium text-slate-200">
+              {query ? "لا يوجد عملاء يطابقون البحث." : "لا يوجد عملاء مسجلون بعد."}
+            </p>
+            {canManage && !query && (
+              <Button className="mt-4" render={<Link href="/sales/customers/new" />}>
+                إضافة أول عميل
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="divide-y divide-white/[0.05]">
+            {customers.map((customer) => (
+              <article
+                key={customer.id}
+                className="flex flex-wrap items-center justify-between gap-4 px-5 py-4"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-semibold text-white">{customer.name}</h2>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-xs ${
+                        customer.isActive
+                          ? "border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-200"
+                          : "border-slate-400/20 bg-slate-400/[0.06] text-slate-300"
+                      }`}
+                    >
+                      {customer.isActive ? "نشط" : "غير نشط"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-400">
+                    {[customer.contactPerson, customer.city]
+                      .filter(Boolean)
+                      .join(" · ") || "لا توجد بيانات إضافية"}
+                  </p>
+                  <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                    {customer.phone && <span dir="ltr">{customer.phone}</span>}
+                    {customer.email && <span dir="ltr">{customer.email}</span>}
+                    <span>{customer._count.orders} طلب</span>
+                  </p>
+                </div>
+                {canManage && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    render={<Link href={`/sales/customers/${customer.id}/edit`} />}
+                  >
+                    تعديل البيانات
+                  </Button>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+
+        {count > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] px-5 py-4 text-sm text-slate-400">
+            <span>
+              عرض {(currentPage - 1) * PAGE_SIZE + 1}–
+              {Math.min(currentPage * PAGE_SIZE, count)} من {count} نتيجة
+              {query ? ` · ${total} عميل إجمالًا` : ""}
+            </span>
+            <div className="flex gap-2">
+              {currentPage > 1 && (
+                <Button variant="outline" size="sm" render={<Link href={listHref(query, currentPage - 1)} />}>
+                  السابق
+                </Button>
+              )}
+              {currentPage < totalPages && (
+                <Button variant="outline" size="sm" render={<Link href={listHref(query, currentPage + 1)} />}>
+                  التالي
+                </Button>
+              )}
             </div>
-            <Link
-              href={`/sales/orders/new?customer=${encodeURIComponent(customer.id)}`}
-              className="mt-5 inline-flex text-sm font-medium text-sky-300 hover:text-sky-200"
-            >
-              إنشاء طلب لهذا العميل
-            </Link>
-          </article>
-        ))}
+          </div>
+        )}
       </section>
     </main>
   );

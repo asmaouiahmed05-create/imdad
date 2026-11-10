@@ -1,52 +1,121 @@
-"use client";
-
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { ArrowRight, ClipboardList, Plus, Search } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { connection } from "next/server";
+import { ArrowRight, Plus, Search } from "lucide-react";
+import type { Prisma } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useSalesDemo } from "@/components/sales/SalesDemoProvider";
+import { CustomerOrderStatusBadge } from "@/components/sales/CustomerOrderStatusBadge";
+import { hasPermission } from "@/lib/authorization";
+import { requirePagePermission } from "@/lib/authz";
+import { prisma } from "@/lib/db";
 import {
-  DEMO_CUSTOMERS,
-  SALES_STATUS_CLASSES,
-  SALES_STATUS_LABELS,
-  type SalesStatus,
-} from "@/lib/sales-demo";
+  CUSTOMER_ORDER_STATUSES,
+  CUSTOMER_ORDER_STATUS_LABELS,
+  isCustomerOrderStatus,
+} from "@/lib/sales-order-state";
 
-const numberFormatter = new Intl.NumberFormat("ar-DZ");
+const PAGE_SIZE = 15;
+const numberFormatter = new Intl.NumberFormat("ar-DZ", {
+  maximumFractionDigits: 6,
+});
 const dateFormatter = new Intl.DateTimeFormat("ar-DZ", {
   dateStyle: "medium",
   timeZone: "Africa/Algiers",
 });
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-export default function SalesOrdersPage() {
-  const { orders, ready, error } = useSalesDemo();
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | SalesStatus>("ALL");
+function firstValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
 
-  const filteredOrders = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase("ar");
-    return orders.filter((order) => {
-      const customer = DEMO_CUSTOMERS.find(
-        (entry) => entry.id === order.customerId,
-      );
-      const matchesQuery =
-        !normalizedQuery ||
-        order.number.toLocaleLowerCase().includes(normalizedQuery) ||
-        order.product.toLocaleLowerCase("ar").includes(normalizedQuery) ||
-        customer?.name.toLocaleLowerCase("ar").includes(normalizedQuery) ||
-        customer?.city.toLocaleLowerCase("ar").includes(normalizedQuery);
-      return (
-        matchesQuery &&
-        (statusFilter === "ALL" || order.status === statusFilter)
-      );
-    });
-  }, [orders, query, statusFilter]);
+function ordersHref(query: string, status: string, page: number) {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (status !== "all") params.set("status", status);
+  if (page > 1) params.set("page", String(page));
+  const search = params.toString();
+  return search ? `/sales/orders?${search}` : "/sales/orders";
+}
+
+export default async function SalesOrdersPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const principal = await requirePagePermission("sales.read");
+  await connection();
+  const params = await searchParams;
+  const query = (firstValue(params.q) ?? "").trim().slice(0, 100);
+  const requestedStatus = firstValue(params.status) ?? "all";
+  const status = isCustomerOrderStatus(requestedStatus)
+    ? requestedStatus
+    : "all";
+  const rawPage = firstValue(params.page) ?? "";
+  const parsedPage = /^\d+$/u.test(rawPage) ? Number(rawPage) : 1;
+  const page =
+    Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const where: Prisma.CustomerOrderWhereInput = {
+    ...(status === "all" ? {} : { status }),
+    ...(query
+      ? {
+          OR: [
+            { orderNumber: { contains: query, mode: "insensitive" } },
+            { customerName: { contains: query, mode: "insensitive" } },
+            {
+              customer: {
+                is: { name: { contains: query, mode: "insensitive" } },
+              },
+            },
+            {
+              lines: {
+                some: {
+                  OR: [
+                    { productName: { contains: query, mode: "insensitive" } },
+                    { productSku: { contains: query, mode: "insensitive" } },
+                  ],
+                },
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+  const [total, count] = await Promise.all([
+    prisma.customerOrder.count(),
+    prisma.customerOrder.count({ where }),
+  ]);
+  const totalPages = Math.ceil(count / PAGE_SIZE);
+  const currentPage = totalPages === 0 ? 1 : Math.min(page, totalPages);
+  const orders = await prisma.customerOrder.findMany({
+    where,
+    select: {
+      id: true,
+      orderNumber: true,
+      customerName: true,
+      status: true,
+      createdAt: true,
+      expectedFulfillmentAt: true,
+      lines: {
+        select: {
+          productName: true,
+          productSku: true,
+          unit: true,
+          orderedQuantity: true,
+        },
+        orderBy: { id: "asc" },
+        take: 2,
+      },
+      _count: { select: { lines: true } },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    skip: (currentPage - 1) * PAGE_SIZE,
+    take: PAGE_SIZE,
+  });
+  const canManage = hasPermission(principal.role, "sales.order.manage");
 
   return (
     <main className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
-      <section className="flex flex-wrap items-end justify-between gap-4">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <Link
             href="/sales"
@@ -58,158 +127,159 @@ export default function SalesOrdersPage() {
           <p className="mb-2 text-xs font-semibold tracking-[0.18em] text-sky-300">
             المبيعات
           </p>
-          <h2 className="text-xl font-semibold text-white sm:text-2xl">
+          <h1 className="text-xl font-semibold text-white sm:text-2xl">
             طلبات العملاء
-          </h2>
+          </h1>
           <p className="mt-2 text-sm text-slate-400">
-            ابحث في الطلبات التجريبية وصفّها حسب الحالة.
+            ابحث في الطلبات المحفوظة وصفّها حسب الحالة.
           </p>
         </div>
-        <Button render={<Link href="/sales/orders/new" />}>
-          <Plus aria-hidden="true" />
-          طلب جديد
-        </Button>
-      </section>
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-4 py-3 text-sm text-rose-200"
-        >
-          {error}
-        </p>
-      )}
+        {canManage && (
+          <Button render={<Link href="/sales/orders/new" />}>
+            <Plus aria-hidden="true" />
+            طلب جديد
+          </Button>
+        )}
+      </header>
 
       <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-900/75">
-        <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-4">
-          <div className="grid size-10 place-items-center rounded-xl bg-sky-400/10 text-sky-300">
-            <ClipboardList aria-hidden="true" className="size-5" />
-          </div>
-          <div>
-            <h3 className="text-base font-semibold text-white">
-              قائمة الطلبات
-            </h3>
-            <p className="mt-1 text-xs text-slate-400">
-              افتح أي طلب لعرض تفاصيله وتحديث حالته.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-3 border-b border-white/[0.06] p-4 sm:flex-row sm:items-center">
-          <label className="relative min-w-0 flex-1">
-            <span className="sr-only">ابحث برقم الطلب أو العميل أو المنتج</span>
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
-            />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="ابحث برقم الطلب أو العميل أو المنتج..."
-              className="h-10 border-white/[0.08] bg-slate-950 ps-10"
-            />
+        <form
+          method="get"
+          action="/sales/orders"
+          className="flex flex-col gap-3 border-b border-white/[0.06] p-4 sm:flex-row sm:items-end"
+        >
+          <label className="grid min-w-56 flex-1 gap-1.5 text-xs text-slate-400">
+            ابحث برقم الطلب أو العميل أو المنتج
+            <div className="relative">
+              <Search
+                aria-hidden="true"
+                className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
+              />
+              <Input
+                name="q"
+                type="search"
+                maxLength={100}
+                defaultValue={query}
+                className="h-10 border-white/[0.08] bg-slate-950 ps-10"
+              />
+            </div>
           </label>
-          <label className="sr-only" htmlFor="sales-status-filter">
-            تصفية حسب الحالة
+          <label className="grid gap-1.5 text-xs text-slate-400">
+            حالة الطلب
+            <select
+              name="status"
+              defaultValue={status}
+              className="h-10 min-w-44 rounded-lg border border-white/[0.12] bg-slate-950 px-3 text-sm text-slate-100"
+            >
+              <option value="all">جميع الحالات</option>
+              {CUSTOMER_ORDER_STATUSES.map((value) => (
+                <option key={value} value={value}>
+                  {CUSTOMER_ORDER_STATUS_LABELS[value]}
+                </option>
+              ))}
+            </select>
           </label>
-          <select
-            id="sales-status-filter"
-            value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(event.target.value as "ALL" | SalesStatus)
-            }
-            className="h-10 rounded-lg border border-white/[0.12] bg-slate-950 px-3 text-sm text-slate-100 outline-none focus-visible:border-sky-400/50 focus-visible:ring-2 focus-visible:ring-sky-400/20"
-          >
-            <option value="ALL">كل الحالات</option>
-            {Object.entries(SALES_STATUS_LABELS).map(([status, label]) => (
-              <option key={status} value={status}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
+          <Button type="submit" variant="outline" className="h-10">
+            تطبيق
+          </Button>
+        </form>
 
-        {!ready ? (
-          <p className="px-5 py-12 text-center text-sm text-slate-400">
-            جارٍ تحميل الطلبات...
-          </p>
-        ) : filteredOrders.length === 0 ? (
+        {orders.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <p className="font-medium text-slate-200">
-              {orders.length === 0
-                ? "لا توجد طلبات بعد."
-                : "لا توجد طلبات تطابق البحث."}
+              {query || status !== "all"
+                ? "لا توجد طلبات تطابق البحث."
+                : "لا توجد طلبات بعد."}
             </p>
-            <p className="mt-2 text-sm text-slate-400">
-              {orders.length === 0
-                ? "أنشئ طلبًا تجريبيًا ليظهر هنا."
-                : "جرّب تغيير عبارة البحث أو الحالة."}
-            </p>
-            {orders.length === 0 && (
-              <Button
-                className="mt-4"
-                render={<Link href="/sales/orders/new" />}
-              >
-                <Plus aria-hidden="true" />
+            {canManage && !query && status === "all" && (
+              <Button className="mt-4" render={<Link href="/sales/orders/new" />}>
                 إنشاء أول طلب
               </Button>
             )}
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[780px] text-start text-sm">
+            <table className="w-full min-w-[800px] text-start text-sm">
               <thead className="bg-white/[0.02] text-xs text-slate-400">
                 <tr>
                   <th className="px-5 py-3 font-medium">رقم الطلب</th>
                   <th className="px-5 py-3 font-medium">العميل</th>
-                  <th className="px-5 py-3 font-medium">المنتج</th>
-                  <th className="px-5 py-3 font-medium">الكمية</th>
-                  <th className="px-5 py-3 font-medium">التسليم المتوقع</th>
+                  <th className="px-5 py-3 font-medium">الأصناف</th>
+                  <th className="px-5 py-3 font-medium">تاريخ الإنشاء</th>
+                  <th className="px-5 py-3 font-medium">الإنجاز المتوقع</th>
                   <th className="px-5 py-3 font-medium">الحالة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.05]">
-                {filteredOrders.map((order) => {
-                  const customer = DEMO_CUSTOMERS.find(
-                    (entry) => entry.id === order.customerId,
-                  );
-                  return (
-                    <tr key={order.id} className="transition hover:bg-white/[0.02]">
-                      <td className="px-5 py-4 font-mono text-xs" dir="ltr">
-                        <Link
-                          href={`/sales/orders/${order.id}`}
-                          className="text-sky-300 hover:text-sky-200 hover:underline"
-                        >
-                          {order.number}
-                        </Link>
-                      </td>
-                      <td className="px-5 py-4 font-medium text-slate-200">
-                        {customer?.name ?? "عميل غير معروف"}
-                      </td>
-                      <td className="px-5 py-4 text-slate-300">
-                        {order.product}
-                      </td>
-                      <td className="px-5 py-4 text-slate-300">
-                        {numberFormatter.format(order.quantity)}
-                      </td>
-                      <td className="px-5 py-4 text-slate-300">
-                        {dateFormatter.format(
-                          new Date(`${order.expectedDeliveryDate}T12:00:00`),
-                        )}
-                      </td>
-                      <td className="px-5 py-4">
-                        <Badge
-                          variant="outline"
-                          className={SALES_STATUS_CLASSES[order.status]}
-                        >
-                          {SALES_STATUS_LABELS[order.status]}
-                        </Badge>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {orders.map((order) => (
+                  <tr key={order.id} className="transition hover:bg-white/[0.02]">
+                    <td className="px-5 py-4 font-mono text-xs" dir="ltr">
+                      <Link
+                        href={`/sales/orders/${order.id}`}
+                        className="text-sky-300 hover:text-sky-200 hover:underline"
+                      >
+                        {order.orderNumber}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-4 font-medium text-slate-200">
+                      {order.customerName}
+                    </td>
+                    <td className="max-w-80 px-5 py-4 text-slate-300">
+                      {order.lines
+                        .map(
+                          (line) =>
+                            `${line.productName} (${line.productSku}) · ${numberFormatter.format(line.orderedQuantity)} ${line.unit}`,
+                        )
+                        .join("، ")}
+                      {order._count.lines > order.lines.length
+                        ? `، +${order._count.lines - order.lines.length} صنف`
+                        : ""}
+                    </td>
+                    <td className="px-5 py-4 text-slate-400">
+                      {dateFormatter.format(order.createdAt)}
+                    </td>
+                    <td className="px-5 py-4 text-slate-400">
+                      {order.expectedFulfillmentAt
+                        ? dateFormatter.format(order.expectedFulfillmentAt)
+                        : "—"}
+                    </td>
+                    <td className="px-5 py-4">
+                      <CustomerOrderStatusBadge status={order.status} />
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {count > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] px-5 py-4 text-sm text-slate-400">
+            <span>
+              عرض {(currentPage - 1) * PAGE_SIZE + 1}–
+              {Math.min(currentPage * PAGE_SIZE, count)} من {count} نتيجة
+              {query || status !== "all" ? ` · ${total} طلب إجمالًا` : ""}
+            </span>
+            <div className="flex gap-2">
+              {currentPage > 1 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  render={<Link href={ordersHref(query, status, currentPage - 1)} />}
+                >
+                  السابق
+                </Button>
+              )}
+              {currentPage < totalPages && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  render={<Link href={ordersHref(query, status, currentPage + 1)} />}
+                >
+                  التالي
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </section>

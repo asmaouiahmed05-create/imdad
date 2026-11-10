@@ -15,8 +15,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { PurchaseOrderStatusBadge } from "@/components/purchasing/PurchaseOrderStatusBadge";
+import { CustomerOrderStatusBadge } from "@/components/sales/CustomerOrderStatusBadge";
 import { useDistributionDemo } from "@/components/distribution/DistributionDemoProvider";
-import { useSalesDemo } from "@/components/sales/SalesDemoProvider";
 import {
   DELIVERY_STATUS_CLASSES,
   DELIVERY_STATUS_LABELS,
@@ -26,11 +26,11 @@ import {
   PRODUCTION_ORDER_STATUS_LABELS,
   type ProductionOrderStatusValue,
 } from "@/lib/production-orders";
-import {
-  SALES_STATUS_CLASSES,
-  SALES_STATUS_LABELS,
-} from "@/lib/sales-demo";
 import type { PurchaseOrderStatus } from "@/lib/purchase-order-state";
+import {
+  CUSTOMER_ORDER_STATUS_LABELS,
+  type CustomerOrderStatus,
+} from "@/lib/sales-order-state";
 
 type TowerData = {
   inventory: {
@@ -67,6 +67,16 @@ type TowerData = {
       plannedQuantity: string;
       finishedProductName: string;
       revision: number;
+    }>;
+  };
+  sales: {
+    orderCounts: Record<CustomerOrderStatus, number>;
+    recentOrders: Array<{
+      id: string;
+      orderNumber: string;
+      customerName: string;
+      status: CustomerOrderStatus;
+      products: string[];
     }>;
   };
 };
@@ -144,8 +154,6 @@ function DashboardPanel({
 }
 
 export function ControlTowerDashboard({ data }: { data: TowerData }) {
-  const { orders: salesOrders, ready: salesReady, error: salesError } =
-    useSalesDemo();
   const {
     deliveries,
     ready: deliveriesReady,
@@ -160,10 +168,8 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
   const activeProductionCount =
     data.production.orderCounts.DRAFT +
     data.production.orderCounts.IN_PROGRESS;
-  const activeSalesCount = salesOrders.filter(
-    (order) =>
-      order.status !== "DELIVERED" && order.status !== "CANCELLED",
-  ).length;
+  const activeSalesCount =
+    data.sales.orderCounts.DRAFT + data.sales.orderCounts.CONFIRMED;
   const activeDeliveryCount = deliveries.filter(
     (delivery) =>
       delivery.status === "PENDING" ||
@@ -222,8 +228,8 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
           accent="amber"
         />
         <StatCard
-          label="طلبات عملاء مفتوحة · تجريبي"
-          value={salesReady ? numberFormatter.format(activeSalesCount) : "—"}
+          label="طلبات عملاء مفتوحة · نظام"
+          value={numberFormatter.format(activeSalesCount)}
           icon={ShoppingBag}
           accent="blue"
         />
@@ -465,22 +471,16 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
         <DashboardPanel>
           <SectionHeading
             title="طلبات العملاء والمبيعات"
-            subtitle="طلبات العملاء وحالاتها من بيانات العرض المحلية."
+            subtitle="طلبات العملاء المسجلة في قاعدة البيانات."
             href="/sales/orders"
             linkLabel="طلبات العملاء"
-            demo
           />
-          {salesError && (
-            <p role="alert" className="m-4 text-sm text-rose-300">
-              {salesError}
-            </p>
-          )}
           <div className="grid grid-cols-3 gap-3 p-4">
             {(
               [
-                ["NEW", "جديد"],
-                ["CONFIRMED", "مؤكد"],
-                ["PREPARING", "قيد التحضير"],
+                ["DRAFT", CUSTOMER_ORDER_STATUS_LABELS.DRAFT],
+                ["CONFIRMED", CUSTOMER_ORDER_STATUS_LABELS.CONFIRMED],
+                ["FULFILLED", CUSTOMER_ORDER_STATUS_LABELS.FULFILLED],
               ] as const
             ).map(([status, label]) => (
               <div
@@ -489,28 +489,18 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
               >
                 <p className="text-xs text-slate-400">{label}</p>
                 <p className="mt-2 text-xl font-semibold text-white">
-                  {salesReady
-                    ? numberFormatter.format(
-                        salesOrders.filter(
-                          (order) => order.status === status,
-                        ).length,
-                      )
-                    : "—"}
+                  {numberFormatter.format(data.sales.orderCounts[status])}
                 </p>
               </div>
             ))}
           </div>
-          {!salesReady ? (
-            <p className="px-5 py-5 text-sm text-slate-400">
-              جارٍ تحميل طلبات العملاء التجريبية...
-            </p>
-          ) : salesOrders.length === 0 ? (
+          {data.sales.recentOrders.length === 0 ? (
             <p className="px-5 py-6 text-center text-sm text-slate-400">
-              لا توجد طلبات عملاء في بيانات العرض.
+              لا توجد طلبات عملاء مسجلة.
             </p>
           ) : (
             <div className="divide-y divide-white/[0.05]">
-              {salesOrders.slice(0, 4).map((order) => (
+              {data.sales.recentOrders.map((order) => (
                 <Link
                   key={order.id}
                   href={`/sales/orders/${order.id}`}
@@ -518,18 +508,16 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
                 >
                   <div>
                     <p className="font-mono text-xs text-sky-300" dir="ltr">
-                      {order.number}
+                      {order.orderNumber}
                     </p>
                     <p className="mt-1 text-sm text-slate-300">
-                      {order.product} · {numberFormatter.format(order.quantity)}
+                      {order.customerName}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {order.products.join("، ")}
                     </p>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={SALES_STATUS_CLASSES[order.status]}
-                  >
-                    {SALES_STATUS_LABELS[order.status]}
-                  </Badge>
+                  <CustomerOrderStatusBadge status={order.status} />
                 </Link>
               ))}
             </div>

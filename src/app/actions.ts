@@ -8,6 +8,11 @@ import {
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/authz";
 import {
+  assertUnreservedStockAvailable,
+  lockInventoryProducts,
+  SalesOrderError,
+} from "@/lib/sales-order-operations";
+import {
   classificationCompatibleWithBomReferences,
   isProductClassification,
 } from "@/lib/production-bom";
@@ -96,6 +101,18 @@ export async function recordMovement(
 
   try {
     await prisma.$transaction(async (tx) => {
+      await lockInventoryProducts(tx, [productId]);
+      const product = await tx.product.findUnique({
+        where: { id: productId },
+        select: { id: true, name: true },
+      });
+      if (!product) throw new MovementError("المنتج غير موجود");
+      if (type === "OUT") {
+        await assertUnreservedStockAvailable(tx, [
+          { productId, productName: product.name, quantity },
+        ]);
+      }
+
       const result =
         type === "OUT"
           ? await tx.product.updateMany({
@@ -130,6 +147,7 @@ export async function recordMovement(
     return { ok: true };
   } catch (e) {
     if (e instanceof MovementError) return { ok: false, error: e.message };
+    if (e instanceof SalesOrderError) return { ok: false, error: e.message };
     return { ok: false, error: "تعذر حفظ الحركة، حاول مرة أخرى" };
   }
 }

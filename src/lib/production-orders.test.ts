@@ -30,6 +30,8 @@ function makeHarness(
   options: {
     material1Quantity?: number;
     material2Quantity?: number;
+    reservedMaterial1?: number;
+    reservedMaterial2?: number;
     bomStatus?: "RELEASED" | "RETIRED";
     failMovementAt?: number;
   } = {},
@@ -102,6 +104,20 @@ function makeHarness(
           data.quantity.increment ?? -(data.quantity.decrement ?? 0);
         return { count: 1 };
       },
+    },
+    customerOrderReservation: {
+      groupBy: async ({ where }: { where: { productId: { in: string[] } } }) =>
+        where.productId.in.flatMap((productId) => {
+          const quantity =
+            productId === "material-1"
+              ? options.reservedMaterial1
+              : productId === "material-2"
+                ? options.reservedMaterial2
+                : undefined;
+          return quantity
+            ? [{ productId, _sum: { quantity } }]
+            : [];
+        }),
     },
     stockMovement: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -225,7 +241,22 @@ test("insufficient material prevents every inventory and order change", async ()
     harness.transaction((tx) =>
       completeProductionOrderInTransaction(tx, "order-1", "2"),
     ),
-    /المخزون غير كافٍ/u,
+    /غير كافٍ/u,
+  );
+  assert.deepEqual(harness.state, before);
+});
+
+test("production cannot consume stock reserved for customer orders", async () => {
+  const harness = makeHarness({
+    material1Quantity: 8,
+    reservedMaterial1: 4,
+  });
+  const before = structuredClone(harness.state);
+  await assert.rejects(
+    harness.transaction((tx) =>
+      completeProductionOrderInTransaction(tx, "order-1", "2"),
+    ),
+    /الكمية المتاحة 4/u,
   );
   assert.deepEqual(harness.state, before);
 });

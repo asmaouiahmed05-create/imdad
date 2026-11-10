@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { DistributionDemoProvider } from "@/components/distribution/DistributionDemoProvider";
-import { SalesDemoProvider } from "@/components/sales/SalesDemoProvider";
+import { requirePagePermission } from "@/lib/authz";
 
-export default function SalesLayout({ children }: { children: ReactNode }) {
-  return (
-    <SalesDemoProvider>
-      <DistributionDemoProvider>{children}</DistributionDemoProvider>
-    </SalesDemoProvider>
-  );
+export default async function SalesLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  await requirePagePermission("sales.read");
+  return children;
 }

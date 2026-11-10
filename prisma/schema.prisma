@@ -25,6 +25,8 @@ model Product {
   purchaseOrderLines    PurchaseOrderLine[]
   finishedProductBoms   BillOfMaterials[]          @relation("BOMFinishedProduct")
   materialBomComponents BillOfMaterialsComponent[] @relation("BOMMaterialProduct")
+  customerOrderLines    CustomerOrderLine[]
+  customerReservations  CustomerOrderReservation[]
 
   @@index([classification, name])
 }
@@ -106,12 +108,16 @@ model StockMovement {
   receipt             PurchaseOrderReceipt? @relation(fields: [receiptId], references: [id], onDelete: Restrict)
   productionOrderId   String?
   productionOrder     ProductionOrder?      @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  customerOrderId     String?
+  customerOrder       CustomerOrder?        @relation(fields: [customerOrderId], references: [id], onDelete: Restrict)
 
   @@unique([productionOrderId, productId, type])
+  @@unique([customerOrderId, productId, type])
   @@index([productId])
   @@index([purchaseOrderLineId])
   @@index([receiptId])
   @@index([productionOrderId])
+  @@index([customerOrderId])
 }
 
 model ProductionOrder {
@@ -210,20 +216,112 @@ enum PurchaseOrderStatus {
   CANCELLED
 }
 
-model User {
-  id            String    @id
+enum CustomerOrderStatus {
+  DRAFT
+  CONFIRMED
+  FULFILLED
+  CANCELLED
+}
+
+enum ReservationReleaseReason {
+  FULFILLED
+  CANCELLED
+}
+
+model Customer {
+  id            String          @id @default(cuid())
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  contactPerson String?
+  phone         String?
+  email         String?
+  city          String?
+  address       String?
+  notes         String?
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  orders        CustomerOrder[]
+
+  @@index([name])
+  @@index([isActive, name])
+}
+
+model CustomerOrder {
+  id                    String                     @id @default(cuid())
+  orderNumber           String                     @unique
+  idempotencyKey        String
+  status                CustomerOrderStatus        @default(DRAFT)
+  customerId            String
+  customer              Customer                   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerName          String
+  createdByUserId       String
+  createdBy             User                       @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  lines                 CustomerOrderLine[]
+  reservations          CustomerOrderReservation[]
+  movements             StockMovement[]
+  expectedFulfillmentAt DateTime?
+  notes                 String?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  confirmedAt           DateTime?
+  fulfilledAt           DateTime?
+  cancelledAt           DateTime?
+
+  @@unique([createdByUserId, idempotencyKey])
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+}
+
+model CustomerOrderLine {
+  id              String                     @id @default(cuid())
+  orderId         String
+  order           CustomerOrder              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  productId       String
+  product         Product                    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName     String
+  productSku      String
+  unit            String
+  orderedQuantity Float
+  reservations    CustomerOrderReservation[]
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  @@unique([orderId, productId])
+  @@index([productId])
+}
+
+model CustomerOrderReservation {
+  id            String                    @id @default(cuid())
+  orderId       String
+  order         CustomerOrder             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLineId   String                    @unique
+  orderLine     CustomerOrderLine         @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  productId     String
+  product       Product                   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity      Float
+  createdAt     DateTime                  @default(now())
+  releasedAt    DateTime?
+  releaseReason ReservationReleaseReason?
+
+  @@index([productId, releasedAt])
+  @@index([orderId, releasedAt])
+}
+
+model User {
+  id            String          @id
+  name          String
+  email         String          @unique
+  emailVerified Boolean         @default(false)
   image         String?
   role          String?
-  banned        Boolean?  @default(false)
+  banned        Boolean?        @default(false)
   banReason     String?
   banExpires    DateTime?
   createdAt     DateTime
   updatedAt     DateTime
   sessions      Session[]
   accounts      Account[]
+  salesOrders   CustomerOrder[]
 
   @@map("user")
 }

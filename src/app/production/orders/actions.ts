@@ -10,6 +10,7 @@ import {
   ProductionOrderError,
   startProductionOrderInTransaction,
 } from "@/lib/production-order-operations";
+import { SalesOrderError } from "@/lib/sales-order-operations";
 import {
   calculateMaterialRequirements,
   parseProductionOrderQuantity,
@@ -52,6 +53,9 @@ function prismaErrorCode(error: unknown) {
 
 function actionError(error: unknown, fallback: string): ActionResult {
   if (error instanceof ProductionOrderError) {
+    return { ok: false, error: error.message };
+  }
+  if (error instanceof SalesOrderError) {
     return { ok: false, error: error.message };
   }
   console.error("Production order operation failed", {

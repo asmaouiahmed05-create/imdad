@@ -1,111 +1,42 @@
-"use client";
-
 import Link from "next/link";
-import { useState } from "react";
-import { ArrowRight, Check, CircleX, PackageCheck, Play } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { ArrowRight, Pencil } from "lucide-react";
+import type { Prisma } from "@prisma/client";
 import { Button } from "@/components/ui/button";
-import { useDistributionDemo } from "@/components/distribution/DistributionDemoProvider";
-import { useSalesDemo } from "@/components/sales/SalesDemoProvider";
-import {
-  canCreateDelivery,
-  DELIVERY_STATUS_CLASSES,
-  DELIVERY_STATUS_LABELS,
-} from "@/lib/delivery-demo";
-import {
-  DEMO_CUSTOMERS,
-  getNextSalesStatus,
-  SALES_STATUS_CLASSES,
-  SALES_STATUS_LABELS,
-  type SalesStatus,
-} from "@/lib/sales-demo";
+import { CustomerOrderLifecycleActions } from "@/components/sales/CustomerOrderLifecycleActions";
+import { CustomerOrderStatusBadge } from "@/components/sales/CustomerOrderStatusBadge";
 
-const numberFormatter = new Intl.NumberFormat("ar-DZ");
+type CustomerOrderDetails = Prisma.CustomerOrderGetPayload<{
+  include: {
+    customer: true;
+    createdBy: { select: { name: true } };
+    lines: { include: { reservations: true } };
+    movements: {
+      include: { product: { select: { name: true, sku: true } } };
+      orderBy: { createdAt: "asc" };
+    };
+  };
+}>;
+
+const numberFormatter = new Intl.NumberFormat("ar-DZ", {
+  maximumFractionDigits: 6,
+});
 const dateFormatter = new Intl.DateTimeFormat("ar-DZ", {
   dateStyle: "long",
   timeZone: "Africa/Algiers",
 });
+const dateTimeFormatter = new Intl.DateTimeFormat("ar-DZ", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Africa/Algiers",
+});
 
-export function SalesOrderDetail({ orderId }: { orderId: string }) {
-  const { orders, ready, error, updateStatus } = useSalesDemo();
-  const {
-    deliveries,
-    ready: deliveriesReady,
-    error: deliveryError,
-  } = useDistributionDemo();
-  const [actionError, setActionError] = useState("");
-  const [actionMessage, setActionMessage] = useState("");
-  const order = orders.find((candidate) => candidate.id === orderId);
-
-  if (!ready) {
-    return (
-      <main className="mx-auto w-full max-w-4xl p-4 sm:p-6 lg:p-8">
-        <p role="status" className="text-sm text-slate-400">
-          جارٍ تحميل تفاصيل الطلب...
-        </p>
-      </main>
-    );
-  }
-
-  if (!order) {
-    return (
-      <main className="mx-auto w-full max-w-4xl space-y-5 p-4 sm:p-6 lg:p-8">
-        <Link
-          href="/sales/orders"
-          className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white"
-        >
-          <ArrowRight aria-hidden="true" className="size-4" />
-          طلبات العملاء
-        </Link>
-        <section className="rounded-2xl border border-white/[0.07] bg-slate-900/75 p-6">
-          <h2 className="text-lg font-semibold text-white">
-            لم يتم العثور على طلب العميل
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            ربما حُذفت بيانات العرض المحلية أو لم يعد هذا الطلب موجودًا.
-          </p>
-          {error && (
-            <p role="alert" className="mt-4 text-sm text-rose-300">
-              {error}
-            </p>
-          )}
-        </section>
-      </main>
-    );
-  }
-
-  const currentOrder = order;
-  const customer = DEMO_CUSTOMERS.find(
-    (entry) => entry.id === currentOrder.customerId,
-  );
-  const delivery = deliveries.find((item) => item.orderId === currentOrder.id);
-  const nextStatus = getNextSalesStatus(currentOrder.status);
-
-  function updateTo(status: SalesStatus, message: string) {
-    setActionError("");
-    setActionMessage("");
-    try {
-      updateStatus(currentOrder.id, status);
-      setActionMessage(message);
-    } catch (caught) {
-      setActionError(
-        caught instanceof Error ? caught.message : "تعذّر تحديث حالة العرض.",
-      );
-    }
-  }
-
-  const nextAction =
-    currentOrder.status === "NEW"
-      ? { label: "تأكيد الطلب", icon: Check }
-      : currentOrder.status === "CONFIRMED"
-        ? { label: "بدء التحضير", icon: Play }
-        : currentOrder.status === "PREPARING"
-          ? { label: "تجهيزه للتسليم", icon: PackageCheck }
-          : currentOrder.status === "READY"
-            ? { label: "تسجيل التسليم التجريبي", icon: Check }
-            : null;
-  const NextActionIcon = nextAction?.icon;
-
+export function SalesOrderDetail({
+  order,
+  canManage,
+}: {
+  order: CustomerOrderDetails;
+  canManage: boolean;
+}) {
   return (
     <main className="mx-auto w-full max-w-4xl space-y-5 p-4 sm:p-6 lg:p-8">
       <Link
@@ -120,166 +51,151 @@ export function SalesOrderDetail({ orderId }: { orderId: string }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="mb-2 text-xs font-semibold tracking-[0.16em] text-sky-300">
-              تفاصيل طلب العميل التجريبي
+              تفاصيل طلب العميل
             </p>
-            <h2 className="font-mono text-xl font-semibold text-white" dir="ltr">
-              {currentOrder.number}
-            </h2>
+            <h1 className="font-mono text-xl font-semibold text-white" dir="ltr">
+              {order.orderNumber}
+            </h1>
           </div>
-          <Badge
-            variant="outline"
-            className={SALES_STATUS_CLASSES[currentOrder.status]}
-          >
-            {SALES_STATUS_LABELS[currentOrder.status]}
-          </Badge>
+          <CustomerOrderStatusBadge status={order.status} />
         </div>
 
-        <p className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-sm leading-6 text-amber-200">
-          تحديث الحالة للعرض فقط. لا ينفّذ تسليمًا أو دفعًا فعليًا ولا يغيّر
-          كميات المخزون أو حركاته.
+        <p className="mt-5 rounded-xl border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-sm leading-6 text-sky-100">
+          يُحجز المخزون عند التأكيد، ويُخصم عند إكمال الطلب. لا يسجل هذا المسار
+          التوصيل أو الدفع أو الفواتير.
         </p>
 
         <dl className="mt-6 grid gap-5 sm:grid-cols-2">
           <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
             <dt className="text-xs text-slate-400">العميل</dt>
-            <dd className="mt-2 font-medium text-white">
-              {customer?.name ?? "عميل غير معروف"}
+            <dd className="mt-2 font-medium text-white">{order.customerName}</dd>
+            <dd className="mt-1 text-sm text-slate-400">
+              {[order.customer.city, order.customer.phone]
+                .filter(Boolean)
+                .join(" · ") || "لا توجد بيانات اتصال إضافية"}
             </dd>
-            {customer && (
-              <dd className="mt-1 text-sm text-slate-400">
-                {customer.city} · {customer.phone}
-              </dd>
-            )}
           </div>
           <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
-            <dt className="text-xs text-slate-400">المنتج والكمية</dt>
+            <dt className="text-xs text-slate-400">تاريخ إنشاء الطلب</dt>
             <dd className="mt-2 font-medium text-white">
-              {currentOrder.product}
+              {dateTimeFormatter.format(order.createdAt)}
             </dd>
             <dd className="mt-1 text-sm text-slate-400">
-              {numberFormatter.format(currentOrder.quantity)} قطعة
+              أنشأه {order.createdBy.name}
+            </dd>
+          </div>
+          <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4 sm:col-span-2">
+            <dt className="text-xs text-slate-400">الأصناف والكميات</dt>
+            <dd className="mt-3">
+              <ul className="divide-y divide-white/[0.05]">
+                {order.lines.map((line) => {
+                  const activeReservation = line.reservations.find(
+                    (reservation) => reservation.releasedAt === null,
+                  );
+                  return (
+                    <li
+                      key={line.id}
+                      className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                    >
+                      <div>
+                        <p className="font-medium text-white">{line.productName}</p>
+                        <p className="mt-1 font-mono text-xs text-slate-500" dir="ltr">
+                          {line.productSku}
+                        </p>
+                      </div>
+                      <div className="text-end">
+                        <p className="text-sm text-slate-200">
+                          {numberFormatter.format(line.orderedQuantity)} {line.unit}
+                        </p>
+                        {activeReservation && (
+                          <p className="mt-1 text-xs text-sky-300">
+                            محجوز: {numberFormatter.format(activeReservation.quantity)}{" "}
+                            {line.unit}
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             </dd>
           </div>
           <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
-            <dt className="text-xs text-slate-400">تاريخ الطلب</dt>
+            <dt className="text-xs text-slate-400">الإنجاز المتوقع</dt>
             <dd className="mt-2 font-medium text-white">
-              {dateFormatter.format(new Date(`${currentOrder.orderDate}T12:00:00`))}
+              {order.expectedFulfillmentAt
+                ? dateFormatter.format(order.expectedFulfillmentAt)
+                : "غير محدد"}
             </dd>
           </div>
           <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
-            <dt className="text-xs text-slate-400">التسليم المتوقع</dt>
+            <dt className="text-xs text-slate-400">آخر تحديث للحالة</dt>
             <dd className="mt-2 font-medium text-white">
-              {dateFormatter.format(
-                new Date(`${currentOrder.expectedDeliveryDate}T12:00:00`),
-              )}
+              {order.status === "DRAFT" && "لم يتم التأكيد"}
+              {order.status === "CONFIRMED" &&
+                `تم التأكيد ${order.confirmedAt ? dateTimeFormatter.format(order.confirmedAt) : ""}`}
+              {order.status === "FULFILLED" &&
+                `تم الإكمال ${order.fulfilledAt ? dateTimeFormatter.format(order.fulfilledAt) : ""}`}
+              {order.status === "CANCELLED" &&
+                `تم الإلغاء ${order.cancelledAt ? dateTimeFormatter.format(order.cancelledAt) : ""}`}
             </dd>
+            {order.status === "CANCELLED" && order.confirmedAt && (
+              <dd className="mt-1 text-xs text-slate-400">
+                حُرر الحجز بعد التأكيد.
+              </dd>
+            )}
           </div>
           <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4 sm:col-span-2">
             <dt className="text-xs text-slate-400">ملاحظات</dt>
             <dd className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-200">
-              {currentOrder.notes || "لا توجد ملاحظات."}
+              {order.notes || "لا توجد ملاحظات."}
             </dd>
           </div>
         </dl>
 
-        <section
-          aria-label="حالة التوصيل المرتبطة"
-          className="mt-5 rounded-xl border border-white/[0.07] bg-slate-950/60 p-4"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs text-slate-400">حالة التوصيل</p>
-              {delivery ? (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className={DELIVERY_STATUS_CLASSES[delivery.status]}
-                  >
-                    {DELIVERY_STATUS_LABELS[delivery.status]}
-                  </Badge>
-                  <span className="font-mono text-xs text-slate-400" dir="ltr">
-                    {delivery.reference}
+        {order.movements.length > 0 && (
+          <section className="mt-5 rounded-xl border border-white/[0.07] bg-slate-950/60 p-4">
+            <h2 className="font-semibold text-white">حركات المخزون المسجلة</h2>
+            <ul className="mt-3 divide-y divide-white/[0.05]">
+              {order.movements.map((movement) => (
+                <li
+                  key={movement.id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"
+                >
+                  <span className="text-slate-300">
+                    {movement.product.name} ({movement.product.sku})
                   </span>
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-slate-300">
-                  {deliveriesReady
-                    ? "لا يوجد سجل توصيل مرتبط بهذا الطلب."
-                    : "جارٍ تحميل حالة التوصيل..."}
-                </p>
-              )}
-            </div>
-            {delivery ? (
+                  <span className="text-rose-300">
+                    صرف {numberFormatter.format(movement.quantity)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {canManage && order.status === "DRAFT" && (
               <Button
                 variant="outline"
-                render={
-                  <Link href={`/distribution/deliveries/${delivery.id}`} />
-                }
+                render={<Link href={`/sales/orders/${order.id}/edit`} />}
               >
-                تفاصيل التوصيل
+                <Pencil aria-hidden="true" />
+                تعديل المسودة
               </Button>
-            ) : (
-              canCreateDelivery(currentOrder) && (
-                <Button
-                  variant="outline"
-                  render={
-                    <Link
-                      href={`/distribution/deliveries/new?order=${encodeURIComponent(currentOrder.id)}`}
-                    />
-                  }
-                >
-                  إنشاء سجل توصيل
-                </Button>
-              )
             )}
+            <CustomerOrderLifecycleActions
+              orderId={order.id}
+              status={order.status}
+              canManage={canManage}
+            />
           </div>
-        </section>
-
-        {(error || actionError || deliveryError) && (
-          <p role="alert" className="mt-5 text-sm text-rose-300">
-            {actionError || error || deliveryError}
-          </p>
-        )}
-        {actionMessage && (
-          <p
-            role="status"
-            className="mt-5 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.06] px-3 py-2 text-sm text-emerald-200"
-          >
-            {actionMessage}
-          </p>
-        )}
-
-        <div className="mt-6 flex flex-wrap gap-2">
-          {nextAction && NextActionIcon && nextStatus && (
-            <Button
-              type="button"
-              onClick={() =>
-                updateTo(nextStatus, `تم تحديث حالة الطلب إلى ${SALES_STATUS_LABELS[nextStatus]}.`)
-              }
-            >
-              <NextActionIcon aria-hidden="true" />
-              {nextAction.label}
-            </Button>
-          )}
-          {currentOrder.status !== "DELIVERED" &&
-            currentOrder.status !== "CANCELLED" && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                updateTo("CANCELLED", "تم إلغاء الطلب في العرض التجريبي.")
-              }
-            >
-              <CircleX aria-hidden="true" />
-              إلغاء الطلب
-            </Button>
-          )}
           <Button
-            type="button"
             variant="outline"
             render={<Link href="/sales/orders" />}
           >
-            العودة إلى القائمة
+            العودة إلى الطلبات
           </Button>
         </div>
       </section>

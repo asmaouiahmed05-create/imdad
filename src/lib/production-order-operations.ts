@@ -1,9 +1,12 @@
-import { Prisma } from "@prisma/client";
 import type { Prisma as PrismaTypes } from "@prisma/client";
 import {
   calculateMaterialRequirements,
   parseProductionOrderQuantity,
 } from "./production-orders.ts";
+import {
+  assertUnreservedStockAvailable,
+  lockInventoryProducts,
+} from "./sales-order-operations.ts";
 
 type TransactionClient = PrismaTypes.TransactionClient;
 
@@ -21,20 +24,6 @@ async function lockBom(tx: TransactionClient, id: string) {
     SELECT "id" FROM "BillOfMaterials" WHERE "id" = ${id} FOR SHARE
   `;
   if (rows.length === 0) throw new ProductionOrderError("قائمة المواد غير موجودة");
-}
-
-async function lockProducts(
-  tx: TransactionClient,
-  productIds: readonly string[],
-) {
-  const ids = [...new Set(productIds)].sort();
-  if (ids.length === 0) return;
-  await tx.$queryRaw<Array<{ id: string }>>`
-    SELECT "id" FROM "Product"
-    WHERE "id" IN (${Prisma.join(ids)})
-    ORDER BY "id"
-    FOR UPDATE
-  `;
 }
 
 async function lockedOrderWithBom(tx: TransactionClient, id: string) {
@@ -76,32 +65,6 @@ function requirementsFor(
   return result.requirements;
 }
 
-async function lockedMaterialProducts(
-  tx: TransactionClient,
-  materialIds: readonly string[],
-) {
-  await lockProducts(tx, materialIds);
-  return tx.product.findMany({
-    where: { id: { in: [...new Set(materialIds)] } },
-    select: { id: true, quantity: true },
-  });
-}
-
-function ensureMaterialsAvailable(
-  requirements: readonly { materialProductId: string; materialName: string; requiredQuantity: number }[],
-  products: readonly { id: string; quantity: number }[],
-) {
-  const productById = new Map(products.map((product) => [product.id, product]));
-  for (const requirement of requirements) {
-    const product = productById.get(requirement.materialProductId);
-    if (!product || product.quantity < requirement.requiredQuantity) {
-      throw new ProductionOrderError(
-        `المخزون غير كافٍ للمادة «${requirement.materialName}»`,
-      );
-    }
-  }
-}
-
 export async function startProductionOrderInTransaction(
   tx: TransactionClient,
   id: string,
@@ -123,11 +86,18 @@ export async function startProductionOrderInTransaction(
   }
 
   const requirements = requirementsFor(order, order.plannedQuantity.toString());
-  const products = await lockedMaterialProducts(
+  await lockInventoryProducts(
     tx,
     requirements.map((requirement) => requirement.materialProductId),
   );
-  ensureMaterialsAvailable(requirements, products);
+  await assertUnreservedStockAvailable(
+    tx,
+    requirements.map((requirement) => ({
+      productId: requirement.materialProductId,
+      productName: requirement.materialName,
+      quantity: requirement.requiredQuantity,
+    })),
+  );
 
   await tx.productionOrder.update({
     where: { id },
@@ -172,12 +142,19 @@ export async function completeProductionOrderInTransaction(
     order.bom.finishedProductId,
     ...requirements.map((requirement) => requirement.materialProductId),
   ];
-  await lockProducts(tx, productIds);
+  await lockInventoryProducts(tx, productIds);
   const products = await tx.product.findMany({
     where: { id: { in: [...new Set(productIds)] } },
     select: { id: true, quantity: true },
   });
-  ensureMaterialsAvailable(requirements, products);
+  await assertUnreservedStockAvailable(
+    tx,
+    requirements.map((requirement) => ({
+      productId: requirement.materialProductId,
+      productName: requirement.materialName,
+      quantity: requirement.requiredQuantity,
+    })),
+  );
 
   const productById = new Map(products.map((product) => [product.id, product]));
   const finishedProduct = productById.get(order.bom.finishedProductId);

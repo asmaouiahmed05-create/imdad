@@ -6,6 +6,10 @@ import {
   PRODUCTION_ORDER_STATUSES,
   type ProductionOrderStatusValue,
 } from "@/lib/production-orders";
+import {
+  CUSTOMER_ORDER_STATUSES,
+  type CustomerOrderStatus,
+} from "@/lib/sales-order-state";
 import { requirePagePermission } from "@/lib/authz";
 import { ControlTowerDashboard } from "@/components/control-tower/ControlTowerDashboard";
 
@@ -15,6 +19,7 @@ export default async function ControlTowerPage() {
     requirePagePermission("supplier.read"),
     requirePagePermission("purchase_order.read"),
     requirePagePermission("production.order.read"),
+    requirePagePermission("sales.read"),
   ]);
   await connection();
 
@@ -29,6 +34,8 @@ export default async function ControlTowerPage() {
     recentPurchaseOrders,
     productionOrderCounts,
     recentProductionOrders,
+    customerOrderCounts,
+    recentCustomerOrders,
   ] = await Promise.all([
     prisma.product.count(),
     prisma.product.count({ where: inventoryStatusWhere("low") }),
@@ -88,6 +95,25 @@ export default async function ControlTowerPage() {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 4,
     }),
+    prisma.customerOrder.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    }),
+    prisma.customerOrder.findMany({
+      select: {
+        id: true,
+        orderNumber: true,
+        customerName: true,
+        status: true,
+        lines: {
+          select: { productName: true },
+          orderBy: { id: "asc" },
+          take: 3,
+        },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 4,
+    }),
   ]);
 
   const countsByPurchaseStatus: Record<PurchaseOrderStatus, number> = {
@@ -106,6 +132,12 @@ export default async function ControlTowerPage() {
   ) as Record<ProductionOrderStatusValue, number>;
   for (const entry of productionOrderCounts) {
     countsByProductionStatus[entry.status] = entry._count._all;
+  }
+  const countsByCustomerStatus = Object.fromEntries(
+    CUSTOMER_ORDER_STATUSES.map((status) => [status, 0]),
+  ) as Record<CustomerOrderStatus, number>;
+  for (const entry of customerOrderCounts) {
+    countsByCustomerStatus[entry.status] = entry._count._all;
   }
 
   return (
@@ -132,6 +164,16 @@ export default async function ControlTowerPage() {
             plannedQuantity: order.plannedQuantity.toString(),
             finishedProductName: order.bom.finishedProductName,
             revision: order.bom.revision,
+          })),
+        },
+        sales: {
+          orderCounts: countsByCustomerStatus,
+          recentOrders: recentCustomerOrders.map((order) => ({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            customerName: order.customerName,
+            status: order.status,
+            products: order.lines.map((line) => line.productName),
           })),
         },
       }}
