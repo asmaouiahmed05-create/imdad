@@ -27,6 +27,8 @@ export const APP_PERMISSIONS = [
   "sales.read",
   "sales.customer.manage",
   "sales.order.manage",
+  "distribution.read",
+  "distribution.manage",
   "reports.read",
   "reports.export",
   "users.manage",
@@ -41,6 +43,7 @@ const READ_ONLY_PERMISSIONS = [
   "supplier.read",
   "purchase_order.read",
   "sales.read",
+  "distribution.read",
   "reports.read",
 ] as const satisfies readonly AppPermission[];
 
@@ -58,6 +61,7 @@ const INVENTORY_OPERATOR_PERMISSIONS = [
   "purchase_order.receive",
   "sales.customer.manage",
   "sales.order.manage",
+  "distribution.manage",
   "reports.export",
 ] as const satisfies readonly AppPermission[];
 

@@ -228,6 +228,44 @@ enum ReservationReleaseReason {
   CANCELLED
 }
 
+enum DeliveryShipmentStatus {
+  PREPARING
+  READY_FOR_DISPATCH
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+  DELIVERY_FAILED
+}
+
+enum DeliveryRunStatus {
+  PLANNED
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+enum DeliveryPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum DeliveryVehicleType {
+  VAN
+  TRUCK
+  REFRIGERATED
+  OTHER
+}
+
+enum DeliveryEventType {
+  CREATED
+  STATUS_CHANGED
+  ASSIGNED_TO_RUN
+  RESCHEDULED
+  RUN_DISPATCHED
+}
+
 model Customer {
   id            String          @id @default(cuid())
   name          String
@@ -258,6 +296,7 @@ model CustomerOrder {
   createdBy             User                       @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines                 CustomerOrderLine[]
   reservations          CustomerOrderReservation[]
+  shipment              DeliveryShipment?
   movements             StockMovement[]
   expectedFulfillmentAt DateTime?
   notes                 String?
@@ -308,22 +347,129 @@ model CustomerOrderReservation {
 }
 
 model User {
-  id            String          @id
-  name          String
-  email         String          @unique
-  emailVerified Boolean         @default(false)
-  image         String?
-  role          String?
-  banned        Boolean?        @default(false)
-  banReason     String?
-  banExpires    DateTime?
-  createdAt     DateTime
-  updatedAt     DateTime
-  sessions      Session[]
-  accounts      Account[]
-  salesOrders   CustomerOrder[]
+  id                  String             @id
+  name                String
+  email               String             @unique
+  emailVerified       Boolean            @default(false)
+  image               String?
+  role                String?
+  banned              Boolean?           @default(false)
+  banReason           String?
+  banExpires          DateTime?
+  createdAt           DateTime
+  updatedAt           DateTime
+  sessions            Session[]
+  accounts            Account[]
+  salesOrders         CustomerOrder[]
+  createdDeliveryRuns DeliveryRun[]
+  createdShipments    DeliveryShipment[]
+  deliveryEvents      DeliveryEvent[]
 
   @@map("user")
+}
+
+model DeliveryDriver {
+  id        String        @id @default(cuid())
+  name      String
+  phone     String
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  runs      DeliveryRun[]
+
+  @@index([isActive, name])
+}
+
+model DeliveryVehicle {
+  id        String              @id @default(cuid())
+  plate     String              @unique
+  label     String
+  type      DeliveryVehicleType
+  maxStops  Int
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  runs      DeliveryRun[]
+
+  @@index([isActive, plate])
+}
+
+model DeliveryRun {
+  id              String             @id @default(cuid())
+  runNumber       String             @unique
+  region          String
+  priority        DeliveryPriority   @default(NORMAL)
+  scheduledAt     DateTime
+  status          DeliveryRunStatus  @default(PLANNED)
+  driverId        String
+  driver          DeliveryDriver     @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicleId       String
+  vehicle         DeliveryVehicle    @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  createdByUserId String
+  createdBy       User               @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  shipments       DeliveryShipment[]
+  events          DeliveryEvent[]
+  dispatchedAt    DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([driverId, scheduledAt])
+  @@index([vehicleId, scheduledAt])
+}
+
+model DeliveryShipment {
+  id                 String                 @id @default(cuid())
+  reference          String                 @unique
+  orderId            String                 @unique
+  order              CustomerOrder          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  status             DeliveryShipmentStatus @default(PREPARING)
+  customerName       String
+  customerPhone      String?
+  region             String
+  address            String
+  expectedDeliveryAt DateTime
+  runId              String?
+  run                DeliveryRun?           @relation(fields: [runId], references: [id], onDelete: Restrict)
+  createdByUserId    String
+  createdBy          User                   @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  receiverName       String?
+  deliveredAt        DateTime?
+  failedReason       String?
+  notes              String?
+  readyAt            DateTime?
+  dispatchedAt       DateTime?
+  inTransitAt        DateTime?
+  failedAt           DateTime?
+  events             DeliveryEvent[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  @@index([status, expectedDeliveryAt])
+  @@index([region, status])
+  @@index([runId, status])
+}
+
+model DeliveryEvent {
+  id                 String                  @id @default(cuid())
+  shipmentId         String
+  shipment           DeliveryShipment        @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  actorUserId        String
+  actor              User                    @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  run                DeliveryRun?            @relation(fields: [runId], references: [id], onDelete: Restrict)
+  type               DeliveryEventType
+  fromStatus         DeliveryShipmentStatus?
+  toStatus           DeliveryShipmentStatus?
+  runId              String?
+  reason             String?
+  receiverName       String?
+  expectedDeliveryAt DateTime?
+  createdAt          DateTime                @default(now())
+
+  @@index([shipmentId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([runId, createdAt])
 }
 
 model Session {

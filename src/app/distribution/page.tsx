@@ -1,11 +1,9 @@
-"use client";
-
 import Link from "next/link";
 import {
-  ArrowLeft,
-  ClipboardList,
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
   Clock3,
-  MapPinned,
   PackageCheck,
   Plus,
   Truck,
@@ -13,36 +11,177 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/dashboard/StatCard";
-import { useDistributionDemo } from "@/components/distribution/DistributionDemoProvider";
-import { useSalesDemo } from "@/components/sales/SalesDemoProvider";
+import { prisma } from "@/lib/db";
+import { getAuthenticatedPrincipal } from "@/lib/authz";
+import { hasPermission } from "@/lib/authorization";
 import {
-  DELIVERY_STATUS_CLASSES,
-  DELIVERY_STATUS_LABELS,
-  type DeliveryStatus,
-} from "@/lib/delivery-demo";
-import { DEMO_CUSTOMERS } from "@/lib/sales-demo";
+  DELIVERY_SHIPMENT_STATUS_CLASSES,
+  DELIVERY_SHIPMENT_STATUS_LABELS,
+  type DeliveryShipmentStatus,
+} from "@/lib/delivery-state";
 
-const numberFormatter = new Intl.NumberFormat("ar-DZ");
+const numberFormatter = new Intl.NumberFormat("ar-DZ", {
+  maximumFractionDigits: 1,
+});
 const dateFormatter = new Intl.DateTimeFormat("ar-DZ", {
   dateStyle: "medium",
   timeZone: "Africa/Algiers",
 });
+const dateTimeFormatter = new Intl.DateTimeFormat("ar-DZ", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Africa/Algiers",
+});
 
-export default function DistributionPage() {
-  const {
-    orders,
-    ready: ordersReady,
-    error: ordersError,
-  } = useSalesDemo();
-  const { deliveries, ready, error } = useDistributionDemo();
-  const countByStatus = (status: DeliveryStatus) =>
-    deliveries.filter((delivery) => delivery.status === status).length;
-  const eligibleOrders = orders.filter(
-    (order) => order.status === "CONFIRMED" || order.status === "READY",
+const activeStatuses: DeliveryShipmentStatus[] = [
+  "PREPARING",
+  "READY_FOR_DISPATCH",
+  "DISPATCHED",
+  "IN_TRANSIT",
+];
+
+export default async function DistributionPage() {
+  const principal = await getAuthenticatedPrincipal();
+  const canManage =
+    !!principal && hasPermission(principal.role, "distribution.manage");
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const [
+    shipmentCounts,
+    totalShipments,
+    delayedShipments,
+    recentShipments,
+    completedShipments,
+    recentDelivered,
+    regionGroups,
+    fleetPerformance,
+    eligibleOrderCount,
+    plannedRunCount,
+  ] = await Promise.all([
+    prisma.deliveryShipment.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    }),
+    prisma.deliveryShipment.count(),
+    prisma.deliveryShipment.count({
+      where: {
+        status: { in: activeStatuses },
+        expectedDeliveryAt: { lt: now },
+      },
+    }),
+    prisma.deliveryShipment.findMany({
+      select: {
+        id: true,
+        reference: true,
+        status: true,
+        customerName: true,
+        region: true,
+        expectedDeliveryAt: true,
+        failedReason: true,
+      },
+      where: {
+        OR: [
+          { status: { in: activeStatuses }, expectedDeliveryAt: { lt: now } },
+          { status: "DELIVERY_FAILED" },
+        ],
+      },
+      orderBy: [{ expectedDeliveryAt: "asc" }, { updatedAt: "desc" }],
+      take: 8,
+    }),
+    prisma.deliveryShipment.findMany({
+      where: { status: "DELIVERED", deliveredAt: { not: null } },
+      select: { deliveredAt: true, expectedDeliveryAt: true, inTransitAt: true },
+    }),
+    prisma.deliveryShipment.findMany({
+      where: { status: "DELIVERED", deliveredAt: { gte: sevenDaysAgo } },
+      select: { deliveredAt: true },
+    }),
+    prisma.deliveryShipment.groupBy({
+      by: ["region"],
+      _count: { _all: true },
+      orderBy: { _count: { region: "desc" } },
+      take: 6,
+    }),
+    prisma.$queryRaw<
+      Array<{
+        driverId: string;
+        driverName: string;
+        vehicleId: string;
+        vehicleLabel: string;
+        deliveredStops: number;
+        failedStops: number;
+      }>
+    >`
+      SELECT
+        driver."id" AS "driverId",
+        driver."name" AS "driverName",
+        vehicle."id" AS "vehicleId",
+        vehicle."label" AS "vehicleLabel",
+        COUNT(DISTINCT event."shipmentId") FILTER (
+          WHERE event."toStatus" = 'DELIVERED'
+        )::int AS "deliveredStops",
+        COUNT(DISTINCT event."shipmentId") FILTER (
+          WHERE event."toStatus" = 'DELIVERY_FAILED'
+        )::int AS "failedStops"
+      FROM "DeliveryEvent" event
+      JOIN "DeliveryRun" run ON run."id" = event."runId"
+      JOIN "DeliveryDriver" driver ON driver."id" = run."driverId"
+      JOIN "DeliveryVehicle" vehicle ON vehicle."id" = run."vehicleId"
+      WHERE event."toStatus" IN ('DELIVERED', 'DELIVERY_FAILED')
+      GROUP BY driver."id", driver."name", vehicle."id", vehicle."label"
+      ORDER BY "deliveredStops" DESC, "failedStops" ASC, driver."name" ASC
+      LIMIT 8
+    `,
+    prisma.customerOrder.count({
+      where: { status: "FULFILLED", shipment: { is: null } },
+    }),
+    prisma.deliveryRun.count({ where: { status: "PLANNED" } }),
+  ]);
+  const counts = Object.fromEntries(
+    [
+      "PREPARING",
+      "READY_FOR_DISPATCH",
+      "DISPATCHED",
+      "IN_TRANSIT",
+      "DELIVERED",
+      "DELIVERY_FAILED",
+    ].map((status) => [status, 0]),
+  ) as Record<DeliveryShipmentStatus, number>;
+  for (const entry of shipmentCounts) counts[entry.status] = entry._count._all;
+  const deliveredCount = counts.DELIVERED;
+  const onTimeCount = completedShipments.filter(
+    (shipment) =>
+      shipment.deliveredAt &&
+      shipment.deliveredAt.getTime() <= shipment.expectedDeliveryAt.getTime(),
+  ).length;
+  const onTimeRate =
+    deliveredCount === 0 ? 0 : (onTimeCount / deliveredCount) * 100;
+  const durations = completedShipments.flatMap((shipment) =>
+    shipment.inTransitAt && shipment.deliveredAt
+      ? [shipment.deliveredAt.getTime() - shipment.inTransitAt.getTime()]
+      : [],
   );
-  const availableOrders = eligibleOrders.filter(
-    (order) => !deliveries.some((delivery) => delivery.orderId === order.id),
-  );
+  const averageHours =
+    durations.length === 0
+      ? null
+      : durations.reduce((sum, duration) => sum + duration, 0) /
+        durations.length /
+        3_600_000;
+  const trend = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now);
+    date.setDate(now.getDate() - (6 - index));
+    const key = date.toLocaleDateString("en-CA", {
+      timeZone: "Africa/Algiers",
+    });
+    const count = recentDelivered.filter(
+      (shipment) =>
+        shipment.deliveredAt?.toLocaleDateString("en-CA", {
+          timeZone: "Africa/Algiers",
+        }) === key,
+    ).length;
+    return { key, count };
+  });
+  const maxTrend = Math.max(1, ...trend.map((item) => item.count));
 
   return (
     <main className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
@@ -51,277 +190,148 @@ export default function DistributionPage() {
           <p className="mb-2 text-xs font-semibold tracking-[0.18em] text-sky-300">
             التوزيع
           </p>
-          <h2 className="text-xl font-semibold text-white sm:text-2xl">
+          <h1 className="text-xl font-semibold text-white sm:text-2xl">
             لوحة التوزيع والتوصيل
-          </h2>
+          </h1>
           <p className="mt-2 text-sm text-slate-400">
-            اربط طلبات العملاء المؤكدة بسجلات التوصيل التجريبية.
+            متابعة الشحنات المنشأة من طلبات العملاء المكتملة، وتخطيط وإدارة
+            عمليات التسليم.
           </p>
         </div>
-        <Button
-          render={
-            <Link
-              href={
-                availableOrders[0]
-                  ? `/distribution/deliveries/new?order=${encodeURIComponent(availableOrders[0].id)}`
-                  : "/distribution/deliveries/new"
-              }
-            />
-          }
-        >
-          <Plus aria-hidden="true" />
-          إنشاء سجل توصيل
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canManage && (
+            <>
+              <Button variant="outline" render={<Link href="/distribution/runs/new" />}>
+                <CalendarDays aria-hidden="true" />
+                تخطيط مسار
+              </Button>
+              <Button render={<Link href="/distribution/deliveries/new" />}>
+              <Plus aria-hidden="true" />
+              إنشاء شحنة
+              </Button>
+            </>
+          )}
+        </div>
       </section>
-
-      <p
-        role="note"
-        className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-sm leading-6 text-amber-200"
-      >
-        نموذج تجريبي: تُحفظ بيانات التوصيل في هذا المتصفح فقط. لا توجد خرائط أو
-        تتبع GPS أو معالجة دفع، ولا تتغير كميات المخزون أو حركاته.
-      </p>
-      {(error || ordersError) && (
-        <p
-          role="alert"
-          className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-4 py-3 text-sm text-rose-200"
-        >
-          {error || ordersError}
-        </p>
-      )}
 
       <section
-        aria-label="ملخص عمليات التوصيل"
-        className="grid grid-cols-2 gap-3 xl:grid-cols-4"
+        aria-label="مؤشرات التوصيل"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6"
       >
-        <StatCard
-          label="إجمالي سجلات التوصيل"
-          value={ready ? numberFormatter.format(deliveries.length) : "—"}
-          icon={ClipboardList}
-          accent="blue"
-        />
-        <StatCard
-          label="قيد الانتظار"
-          value={ready ? numberFormatter.format(countByStatus("PENDING")) : "—"}
-          icon={Clock3}
-          accent="violet"
-        />
-        <StatCard
-          label="خرجت للتوصيل"
-          value={
-            ready ? numberFormatter.format(countByStatus("OUT_FOR_DELIVERY")) : "—"
-          }
-          icon={Truck}
-          accent="amber"
-        />
-        <StatCard
-          label="تم التسليم"
-          value={
-            ready ? numberFormatter.format(countByStatus("DELIVERED")) : "—"
-          }
-          icon={PackageCheck}
-          accent="emerald"
-        />
+        <StatCard label="إجمالي الشحنات" value={numberFormatter.format(totalShipments)} icon={PackageCheck} accent="blue" />
+        <StatCard label="بانتظار الإرسال" value={numberFormatter.format(counts.PREPARING + counts.READY_FOR_DISPATCH)} icon={Clock3} accent="violet" />
+        <StatCard label="قيد التوصيل" value={numberFormatter.format(counts.DISPATCHED + counts.IN_TRANSIT)} icon={Truck} accent="amber" />
+        <StatCard label="تم التسليم" value={numberFormatter.format(deliveredCount)} icon={CheckCircle2} accent="emerald" />
+        <StatCard label="فاشلة / متأخرة" value={numberFormatter.format(counts.DELIVERY_FAILED + delayedShipments)} icon={AlertTriangle} accent="rose" />
+        <StatCard label="التسليم في الموعد" value={`${numberFormatter.format(onTimeRate)}%`} icon={CheckCircle2} accent="blue" />
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.8fr)]">
-        <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-900/75">
-          <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-4">
-            <div className="flex items-center gap-3">
-              <div className="grid size-10 place-items-center rounded-xl bg-sky-400/10 text-sky-300">
-                <MapPinned aria-hidden="true" className="size-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-white">
-                  الطلبات الجاهزة للتوزيع
-                </h3>
-                <p className="mt-1 text-xs text-slate-400">
-                  الطلبات المؤكدة أو الجاهزة للتسليم.
-                </p>
-              </div>
-            </div>
-            <Badge
-              variant="outline"
-              className="border-white/10 bg-slate-900 px-3 py-2 text-slate-300"
-            >
-              {ordersReady ? numberFormatter.format(eligibleOrders.length) : "—"}{" "}
-              طلب
-            </Badge>
-          </div>
-          {!ordersReady ? (
-            <p className="px-5 py-10 text-center text-sm text-slate-400">
-              جارٍ تحميل طلبات العملاء...
-            </p>
-          ) : eligibleOrders.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <p className="font-medium text-slate-200">
-                لا توجد طلبات مؤكدة أو جاهزة للتسليم.
-              </p>
-              <p className="mt-2 text-sm text-slate-400">
-                أكّد طلب عميل أو جهّزه للتسليم أولًا.
-              </p>
-              <Button
-                className="mt-4"
-                variant="outline"
-                render={<Link href="/sales/orders" />}
-              >
-                فتح طلبات العملاء
-              </Button>
-            </div>
-          ) : (
-            <div className="divide-y divide-white/[0.05]">
-              {eligibleOrders.map((order) => {
-                const customer = DEMO_CUSTOMERS.find(
-                  (entry) => entry.id === order.customerId,
-                );
-                const delivery = deliveries.find(
-                  (item) => item.orderId === order.id,
-                );
-                return (
-                  <div
-                    key={order.id}
-                    className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"
-                  >
-                    <div className="min-w-0">
-                      <Link
-                        href={`/sales/orders/${order.id}`}
-                        className="font-mono text-xs text-sky-300 hover:underline"
-                        dir="ltr"
-                      >
-                        {order.number}
-                      </Link>
-                      <p className="mt-1 truncate text-sm font-medium text-white">
-                        {customer?.name ?? "عميل غير معروف"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {order.product} · {order.quantity} قطعة
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {delivery ? (
-                        <>
-                          <Badge
-                            variant="outline"
-                            className={DELIVERY_STATUS_CLASSES[delivery.status]}
-                          >
-                            {DELIVERY_STATUS_LABELS[delivery.status]}
-                          </Badge>
-                          <Button
-                            variant="outline"
-                            render={
-                              <Link href={`/distribution/deliveries/${delivery.id}`} />
-                            }
-                          >
-                            تفاصيل التوصيل
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Badge
-                            variant="outline"
-                            className="border-white/10 bg-slate-900 text-slate-300"
-                          >
-                            {order.status === "READY" ? "جاهز للتسليم" : "مؤكد"}
-                          </Badge>
-                          <Button
-                            render={
-                              <Link
-                                href={`/distribution/deliveries/new?order=${encodeURIComponent(order.id)}`}
-                              />
-                            }
-                          >
-                            إنشاء توصيل
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-900/75">
-          <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-4">
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <div className="space-y-4 rounded-2xl border border-white/[0.07] bg-slate-900/75 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-white">
-                أحدث سجلات التوصيل
-              </h3>
+              <h2 className="font-semibold text-white">تنبيهات التشغيل</h2>
               <p className="mt-1 text-xs text-slate-400">
-                متابعة تقدم عمليات التوصيل.
+                الشحنات المتأخرة أو التي تحتاج إلى إجراء بعد محاولة فاشلة.
               </p>
             </div>
-            <Link
-              href="/distribution/deliveries"
-              className="inline-flex items-center gap-1 text-sm text-sky-300 hover:text-sky-200"
-            >
-              الكل <ArrowLeft aria-hidden="true" className="size-4" />
-            </Link>
+            <Link href="/distribution/deliveries" className="text-sm text-sky-300 hover:underline">كل الشحنات</Link>
           </div>
-          {!ready ? (
-            <p className="px-5 py-10 text-center text-sm text-slate-400">
-              جارٍ تحميل سجلات التوصيل...
+          {recentShipments.length === 0 ? (
+            <p className="rounded-xl border border-white/[0.06] bg-slate-950/50 p-5 text-center text-sm text-slate-400">
+              لا توجد تنبيهات عاجلة حاليًا.
             </p>
-          ) : deliveries.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <p className="font-medium text-slate-200">
-                لا توجد سجلات توصيل بعد.
-              </p>
-              <p className="mt-2 text-sm text-slate-400">
-                أنشئ سجلًا من أحد الطلبات الجاهزة.
-              </p>
-            </div>
           ) : (
-            <div className="divide-y divide-white/[0.05]">
-              {deliveries.slice(0, 4).map((delivery) => {
-                const order = orders.find(
-                  (item) => item.id === delivery.orderId,
-                );
-                return (
-                  <Link
-                    key={delivery.id}
-                    href={`/distribution/deliveries/${delivery.id}`}
-                    className="flex items-center justify-between gap-3 px-5 py-4 transition hover:bg-white/[0.03]"
-                  >
-                    <div>
-                      <p className="font-mono text-xs text-sky-300" dir="ltr">
-                        {delivery.reference}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-200">
-                        {order?.number ?? "طلب غير متاح"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {dateFormatter.format(
-                          new Date(`${delivery.deliveryDate}T12:00:00`),
-                        )}
-                      </p>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={DELIVERY_STATUS_CLASSES[delivery.status]}
-                    >
-                      {DELIVERY_STATUS_LABELS[delivery.status]}
-                    </Badge>
-                  </Link>
-                );
-              })}
-            </div>
+            <ul className="divide-y divide-white/[0.05] rounded-xl border border-white/[0.06]">
+              {recentShipments.map((shipment) => (
+                <li key={shipment.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <Link href={`/distribution/deliveries/${shipment.id}`} className="font-mono text-xs text-sky-300 hover:underline" dir="ltr">{shipment.reference}</Link>
+                    <p className="mt-1 truncate text-sm text-slate-200">{shipment.customerName} · {shipment.region}</p>
+                    {shipment.failedReason && <p className="mt-1 line-clamp-2 text-xs text-rose-300">{shipment.failedReason}</p>}
+                    {shipment.expectedDeliveryAt < now && shipment.status !== "DELIVERY_FAILED" && <p className="mt-1 text-xs text-rose-300">تجاوز موعد التسليم {dateFormatter.format(shipment.expectedDeliveryAt)}</p>}
+                  </div>
+                  <Badge variant="outline" className={DELIVERY_SHIPMENT_STATUS_CLASSES[shipment.status]}>{DELIVERY_SHIPMENT_STATUS_LABELS[shipment.status]}</Badge>
+                </li>
+              ))}
+            </ul>
           )}
+        </div>
+        <div className="space-y-4 rounded-2xl border border-white/[0.07] bg-slate-900/75 p-5">
+          <div>
+            <h2 className="font-semibold text-white">الأداء والمناطق</h2>
+            <p className="mt-1 text-xs text-slate-400">إحصاءات مبنية على سجلات التسليم الفعلية.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
+              <p className="text-xs text-slate-400">معدل إكمال الطلب</p>
+              <p className="mt-2 text-2xl font-semibold text-emerald-300">{numberFormatter.format(totalShipments === 0 ? 0 : deliveredCount / totalShipments * 100)}%</p>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
+              <p className="text-xs text-slate-400">متوسط مدة التوصيل</p>
+              <p className="mt-2 text-2xl font-semibold text-sky-300">{averageHours === null ? "—" : `${numberFormatter.format(averageHours)} س`}</p>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
+              <p className="text-xs text-slate-400">معدل تعذّر التسليم</p>
+              <p className="mt-2 text-2xl font-semibold text-rose-300">{numberFormatter.format(totalShipments === 0 ? 0 : counts.DELIVERY_FAILED / totalShipments * 100)}%</p>
+            </div>
+          </div>
+          <div>
+            <h3 className="mb-2 text-xs font-medium text-slate-400">عمليات التسليم · آخر 7 أيام</h3>
+            <div className="flex h-24 items-end gap-2 rounded-xl border border-white/[0.06] bg-slate-950/50 px-3 py-2">
+              {trend.map((item) => (
+                <div key={item.key} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+                  <span className="text-[10px] text-slate-500">{item.count || ""}</span>
+                  <div title={`${item.key}: ${item.count}`} className="w-full rounded-t bg-sky-400/70" style={{ height: `${Math.max(4, item.count / maxTrend * 60)}%` }} />
+                  <span className="text-[9px] text-slate-500">{item.key.slice(5)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-xs font-medium text-slate-400">الشحنات حسب المنطقة</h3>
+            {regionGroups.length === 0 ? <p className="text-sm text-slate-500">لا توجد بيانات بعد.</p> : regionGroups.map((region) => (
+              <div key={region.region} className="flex justify-between gap-3 text-sm"><span className="truncate text-slate-300">{region.region}</span><span className="text-slate-400">{region._count._all}</span></div>
+            ))}
+          </div>
+          <div className="space-y-2 border-t border-white/[0.06] pt-4">
+            <h3 className="text-xs font-medium text-slate-400">التسليم حسب السائق والمركبة</h3>
+            {fleetPerformance.length === 0 ? <p className="text-sm text-slate-500">تظهر المؤشرات بعد إتمام محاولات توصيل مسندة إلى مسارات.</p> : fleetPerformance.map((item) => (
+              <div key={`${item.driverId}:${item.vehicleId}`} className="flex flex-wrap justify-between gap-2 text-sm">
+                <span className="text-slate-300">{item.driverName} · {item.vehicleLabel}</span>
+                <span className="text-slate-400">{item.deliveredStops} تم التسليم · {item.failedStops} تعذّر</span>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {ready && availableOrders.length === 0 && eligibleOrders.length > 0 && (
-        <p className="text-center text-xs text-slate-500">
-          لكل الطلبات المؤهلة سجل توصيل.{" "}
-          <Link
-            href="/distribution/deliveries"
-            className="text-sky-300 hover:underline"
-          >
-            استعراض السجلات
-          </Link>
-        </p>
-      )}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-white/[0.07] bg-slate-900/75 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div><h2 className="font-semibold text-white">الطلبات المكتملة دون شحنة</h2><p className="mt-1 text-xs text-slate-400">لا يمكن الشحن إلا بعد اكتمال طلب العميل.</p></div>
+            <span className="text-xl font-semibold text-sky-300">{eligibleOrderCount}</span>
+          </div>
+          {canManage && <Button className="mt-4" variant="outline" render={<Link href="/distribution/deliveries/new" />}>إنشاء شحنة</Button>}
+        </div>
+        <div className="rounded-2xl border border-white/[0.07] bg-slate-900/75 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div><h2 className="font-semibold text-white">المسارات المخططة</h2><p className="mt-1 text-xs text-slate-400">إسناد السائقين والمركبات والتوقفات حسب المنطقة.</p></div>
+            <span className="text-xl font-semibold text-violet-300">{plannedRunCount}</span>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="outline" render={<Link href="/distribution/runs" />}>مسارات التوصيل</Button>
+            <Button variant="outline" render={<Link href="/distribution/fleet" />}>إدارة الأسطول</Button>
+          </div>
+        </div>
+      </section>
+
+      <div className="flex flex-wrap gap-3 border-t border-white/[0.06] pt-4 text-sm">
+        <Link href="/distribution/deliveries" className="text-sky-300 hover:underline">سجل الشحنات</Link>
+        <Link href="/distribution/runs" className="text-sky-300 hover:underline">مسارات التوصيل</Link>
+        <Link href="/distribution/fleet" className="text-sky-300 hover:underline">السائقون والمركبات</Link>
+        <span className="text-xs text-slate-500">حُسب آخر تحديث: {dateTimeFormatter.format(now)}</span>
+      </div>
     </main>
   );
 }

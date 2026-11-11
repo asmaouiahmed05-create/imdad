@@ -16,11 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { PurchaseOrderStatusBadge } from "@/components/purchasing/PurchaseOrderStatusBadge";
 import { CustomerOrderStatusBadge } from "@/components/sales/CustomerOrderStatusBadge";
-import { useDistributionDemo } from "@/components/distribution/DistributionDemoProvider";
 import {
-  DELIVERY_STATUS_CLASSES,
-  DELIVERY_STATUS_LABELS,
-} from "@/lib/delivery-demo";
+  DELIVERY_SHIPMENT_STATUS_CLASSES,
+  DELIVERY_SHIPMENT_STATUS_LABELS,
+  type DeliveryShipmentStatus,
+} from "@/lib/delivery-state";
 import {
   PRODUCTION_ORDER_STATUS_CLASSES,
   PRODUCTION_ORDER_STATUS_LABELS,
@@ -79,6 +79,18 @@ type TowerData = {
       products: string[];
     }>;
   };
+  distribution: {
+    shipmentCounts: Record<DeliveryShipmentStatus, number>;
+    delayedShipmentCount: number;
+    recentShipments: Array<{
+      id: string;
+      reference: string;
+      status: DeliveryShipmentStatus;
+      expectedDeliveryAt: Date;
+      customerName: string;
+      region: string;
+    }>;
+  };
 };
 
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
@@ -89,17 +101,13 @@ const dateFormatter = new Intl.DateTimeFormat("ar-DZ", {
   timeZone: "Africa/Algiers",
 });
 
-function SourceLabel({ demo = false }: { demo?: boolean }) {
+function SourceLabel() {
   return (
     <Badge
       variant="outline"
-      className={
-        demo
-          ? "border-amber-400/20 bg-amber-400/[0.06] text-amber-200"
-          : "border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-200"
-      }
+      className="border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-200"
     >
-      {demo ? "عرض محلي تجريبي" : "بيانات النظام"}
+      بيانات النظام
     </Badge>
   );
 }
@@ -109,13 +117,11 @@ function SectionHeading({
   subtitle,
   href,
   linkLabel,
-  demo = false,
 }: {
   title: string;
   subtitle: string;
   href: string;
   linkLabel: string;
-  demo?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.06] px-5 py-4 sm:px-6">
@@ -123,7 +129,7 @@ function SectionHeading({
         <h3 className="text-base font-semibold text-white">{title}</h3>
         <p className="mt-1 text-xs leading-5 text-slate-400">{subtitle}</p>
         <div className="mt-2">
-          <SourceLabel demo={demo} />
+          <SourceLabel />
         </div>
       </div>
       <Link
@@ -154,14 +160,7 @@ function DashboardPanel({
 }
 
 export function ControlTowerDashboard({ data }: { data: TowerData }) {
-  const {
-    deliveries,
-    ready: deliveriesReady,
-    error: deliveriesError,
-  } = useDistributionDemo();
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Africa/Algiers",
-  }).format(new Date());
+  const now = new Date();
   const activePurchaseOrders =
     data.procurement.purchaseOrderCounts.SUBMITTED +
     data.procurement.purchaseOrderCounts.PARTIALLY_RECEIVED;
@@ -170,19 +169,11 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
     data.production.orderCounts.IN_PROGRESS;
   const activeSalesCount =
     data.sales.orderCounts.DRAFT + data.sales.orderCounts.CONFIRMED;
-  const activeDeliveryCount = deliveries.filter(
-    (delivery) =>
-      delivery.status === "PENDING" ||
-      delivery.status === "PREPARING" ||
-      delivery.status === "OUT_FOR_DELIVERY",
-  ).length;
-  const delayedDeliveries = deliveries.filter(
-    (delivery) =>
-      delivery.deliveryDate < today &&
-      (delivery.status === "PENDING" ||
-        delivery.status === "PREPARING" ||
-        delivery.status === "OUT_FOR_DELIVERY"),
-  );
+  const activeDeliveryCount =
+    data.distribution.shipmentCounts.PREPARING +
+    data.distribution.shipmentCounts.READY_FOR_DISPATCH +
+    data.distribution.shipmentCounts.DISPATCHED +
+    data.distribution.shipmentCounts.IN_TRANSIT;
 
   return (
     <main className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
@@ -201,7 +192,6 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <SourceLabel />
-          <SourceLabel demo />
         </div>
       </section>
 
@@ -234,20 +224,14 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
           accent="blue"
         />
         <StatCard
-          label="عمليات توصيل نشطة · تجريبي"
-          value={
-            deliveriesReady ? numberFormatter.format(activeDeliveryCount) : "—"
-          }
+          label="عمليات توصيل نشطة · نظام"
+          value={numberFormatter.format(activeDeliveryCount)}
           icon={Truck}
           accent="violet"
         />
         <StatCard
-          label="توصيلات متأخرة · تجريبي"
-          value={
-            deliveriesReady
-              ? numberFormatter.format(delayedDeliveries.length)
-              : "—"
-          }
+          label="توصيلات متأخرة · نظام"
+          value={numberFormatter.format(data.distribution.delayedShipmentCount)}
           icon={PackageCheck}
           accent="rose"
         />
@@ -527,95 +511,63 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
         <DashboardPanel className="xl:col-span-2">
           <SectionHeading
             title="عمليات التوصيل والتأخير"
-            subtitle={`سجلات التوصيل التجريبية المتأخرة تُحسب عند تجاوز التاريخ المحدد دون تسليم (قبل ${today}).`}
+            subtitle={`الشحنات المتأخرة أو المتعذرة وتحديثات حالتها من قاعدة بيانات النظام.`}
             href="/distribution"
             linkLabel="لوحة التوزيع"
-            demo
           />
-          {deliveriesError && (
-            <p role="alert" className="m-4 text-sm text-rose-300">
-              {deliveriesError}
-            </p>
-          )}
           <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
                 <p className="text-xs text-slate-400">عمليات نشطة</p>
                 <p className="mt-2 text-2xl font-semibold text-sky-300">
-                  {deliveriesReady
-                    ? numberFormatter.format(activeDeliveryCount)
-                    : "—"}
+                  {numberFormatter.format(activeDeliveryCount)}
                 </p>
               </div>
               <div className="rounded-xl border border-rose-400/10 bg-rose-400/[0.04] p-4">
                 <p className="text-xs text-rose-200">متأخرة</p>
                 <p className="mt-2 text-2xl font-semibold text-rose-200">
-                  {deliveriesReady
-                    ? numberFormatter.format(delayedDeliveries.length)
-                    : "—"}
+                  {numberFormatter.format(data.distribution.delayedShipmentCount)}
                 </p>
               </div>
               <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
                 <p className="text-xs text-slate-400">تم التسليم</p>
                 <p className="mt-2 text-xl font-semibold text-emerald-300">
-                  {deliveriesReady
-                    ? numberFormatter.format(
-                        deliveries.filter(
-                          (delivery) => delivery.status === "DELIVERED",
-                        ).length,
-                      )
-                    : "—"}
+                  {numberFormatter.format(data.distribution.shipmentCounts.DELIVERED)}
                 </p>
               </div>
               <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
                 <p className="text-xs text-slate-400">تعذّر التسليم</p>
                 <p className="mt-2 text-xl font-semibold text-rose-300">
-                  {deliveriesReady
-                    ? numberFormatter.format(
-                        deliveries.filter(
-                          (delivery) => delivery.status === "FAILED",
-                        ).length,
-                      )
-                    : "—"}
+                  {numberFormatter.format(data.distribution.shipmentCounts.DELIVERY_FAILED)}
                 </p>
               </div>
             </div>
-            {!deliveriesReady ? (
-              <p className="self-center text-sm text-slate-400">
-                جارٍ تحميل بيانات التوصيل التجريبية...
-              </p>
-            ) : deliveries.length === 0 ? (
+            {data.distribution.recentShipments.length === 0 ? (
               <p className="self-center text-center text-sm text-slate-400">
-                لا توجد سجلات توصيل في بيانات العرض.
+                لا توجد شحنات متأخرة أو محاولات تعذّر تسليمها.
               </p>
             ) : (
               <div className="divide-y divide-white/[0.05] rounded-xl border border-white/[0.06] bg-slate-950/40">
-                {deliveries.slice(0, 5).map((delivery) => (
+                {data.distribution.recentShipments.map((shipment) => (
                   <Link
-                    key={delivery.id}
-                    href={`/distribution/deliveries/${delivery.id}`}
+                    key={shipment.id}
+                    href={`/distribution/deliveries/${shipment.id}`}
                     className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition hover:bg-white/[0.03]"
                   >
                     <div>
                       <p className="font-mono text-xs text-sky-300" dir="ltr">
-                        {delivery.reference}
+                        {shipment.reference}
                       </p>
-                      <p className="mt-1 text-sm text-slate-400" dir="ltr">
-                        {delivery.deliveryDate}
-                        {delivery.deliveryDate < today &&
-                          delivery.status !== "DELIVERED" &&
-                          delivery.status !== "FAILED" && (
-                            <span className="ms-2 text-rose-300">
-                              متأخر
-                            </span>
-                          )}
+                      <p className="mt-1 text-sm text-slate-300">
+                        {shipment.customerName} · {shipment.region}
                       </p>
+                      <p className="mt-1 text-xs text-slate-500">{dateFormatter.format(shipment.expectedDeliveryAt)}{shipment.expectedDeliveryAt < now && !["DELIVERY_FAILED", "DELIVERED"].includes(shipment.status) ? " · متأخر" : ""}</p>
                     </div>
                     <Badge
                       variant="outline"
-                      className={DELIVERY_STATUS_CLASSES[delivery.status]}
+                      className={DELIVERY_SHIPMENT_STATUS_CLASSES[shipment.status]}
                     >
-                      {DELIVERY_STATUS_LABELS[delivery.status]}
+                      {DELIVERY_SHIPMENT_STATUS_LABELS[shipment.status]}
                     </Badge>
                   </Link>
                 ))}
@@ -624,9 +576,7 @@ export function ControlTowerDashboard({ data }: { data: TowerData }) {
           </div>
           <div className="border-t border-white/[0.06] px-5 py-3 sm:px-6">
             <p className="text-xs leading-5 text-slate-500">
-              عدد الموردين وأوامر الشراء والمخزون من قاعدة بيانات النظام. أما
-              الإنتاج وطلبات العملاء والتوصيل فهي بيانات عرض محفوظة محليًا، ولا
-              تمثل نتائج تشغيلية فعلية.
+              مؤشرات التوصيل والشحنات الفعلية مستمدة من سجلات قاعدة بيانات النظام.
             </p>
           </div>
         </DashboardPanel>

@@ -10,6 +10,10 @@ import {
   CUSTOMER_ORDER_STATUSES,
   type CustomerOrderStatus,
 } from "@/lib/sales-order-state";
+import {
+  DELIVERY_SHIPMENT_STATUSES,
+  type DeliveryShipmentStatus,
+} from "@/lib/delivery-state";
 import { requirePagePermission } from "@/lib/authz";
 import { ControlTowerDashboard } from "@/components/control-tower/ControlTowerDashboard";
 
@@ -20,6 +24,7 @@ export default async function ControlTowerPage() {
     requirePagePermission("purchase_order.read"),
     requirePagePermission("production.order.read"),
     requirePagePermission("sales.read"),
+    requirePagePermission("distribution.read"),
   ]);
   await connection();
 
@@ -36,6 +41,9 @@ export default async function ControlTowerPage() {
     recentProductionOrders,
     customerOrderCounts,
     recentCustomerOrders,
+    deliveryShipmentCounts,
+    recentDeliveryShipments,
+    delayedShipmentCount,
   ] = await Promise.all([
     prisma.product.count(),
     prisma.product.count({ where: inventoryStatusWhere("low") }),
@@ -114,6 +122,36 @@ export default async function ControlTowerPage() {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 4,
     }),
+    prisma.deliveryShipment.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    }),
+    prisma.deliveryShipment.findMany({
+      select: {
+        id: true,
+        reference: true,
+        status: true,
+        expectedDeliveryAt: true,
+        customerName: true,
+        region: true,
+      },
+      where: {
+        OR: [
+          { status: { in: ["PREPARING", "READY_FOR_DISPATCH", "DISPATCHED", "IN_TRANSIT"] } },
+          { status: "DELIVERY_FAILED" },
+        ],
+      },
+      orderBy: [{ expectedDeliveryAt: "asc" }, { createdAt: "desc" }],
+      take: 5,
+    }),
+    prisma.deliveryShipment.count({
+      where: {
+        status: {
+          in: ["PREPARING", "READY_FOR_DISPATCH", "DISPATCHED", "IN_TRANSIT"],
+        },
+        expectedDeliveryAt: { lt: new Date() },
+      },
+    }),
   ]);
 
   const countsByPurchaseStatus: Record<PurchaseOrderStatus, number> = {
@@ -138,6 +176,12 @@ export default async function ControlTowerPage() {
   ) as Record<CustomerOrderStatus, number>;
   for (const entry of customerOrderCounts) {
     countsByCustomerStatus[entry.status] = entry._count._all;
+  }
+  const countsByDeliveryStatus = Object.fromEntries(
+    DELIVERY_SHIPMENT_STATUSES.map((status) => [status, 0]),
+  ) as Record<DeliveryShipmentStatus, number>;
+  for (const entry of deliveryShipmentCounts) {
+    countsByDeliveryStatus[entry.status] = entry._count._all;
   }
 
   return (
@@ -175,6 +219,11 @@ export default async function ControlTowerPage() {
             status: order.status,
             products: order.lines.map((line) => line.productName),
           })),
+        },
+        distribution: {
+          shipmentCounts: countsByDeliveryStatus,
+          recentShipments: recentDeliveryShipments,
+          delayedShipmentCount,
         },
       }}
     />
