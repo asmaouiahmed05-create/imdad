@@ -1,453 +1,1264 @@
-import {
-  AlertTriangle,
-  Boxes,
-  ChevronLeft,
-  ChevronRight,
-  CircleCheck,
-  Package,
-  PackageX,
-} from "lucide-react";
 import { connection } from "next/server";
-import Link from "next/link";
-import type { Prisma } from "@prisma/client";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { redirect } from "next/navigation";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { AddProductDialog } from "@/components/dashboard/AddProductDialog";
-import { ProductActions } from "@/components/dashboard/ProductActions";
-import { StatCard } from "@/components/dashboard/StatCard";
-import { StockStatusChart } from "@/components/dashboard/StockStatusChart";
-import { TopProductsChart } from "@/components/dashboard/TopProductsChart";
-import type { StockStatusDatum, WarehouseProduct } from "@/components/dashboard/types";
+  Boxes,
+  Building2,
+  CheckCircle2,
+  ClipboardList,
+  Factory,
+  PackageCheck,
+  PackageOpen,
+  ShoppingBag,
+  ShoppingCart,
+  Truck,
+  UsersRound,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  AnalyticsSection,
+  type AnalyticsModule,
+  type AnalyticsStatus,
+} from "@/components/dashboard/AnalyticsSection";
+import { ExecutiveMetricCard } from "@/components/dashboard/ExecutiveMetricCard";
+import type { ExecutiveMetric } from "@/components/dashboard/ExecutiveMetricCard";
+import {
+  AlertsCenter,
+  type OperationalAlert,
+} from "@/components/dashboard/AlertsCenter";
+import {
+  RecentActivityTimeline,
+  type TimelineActivity,
+} from "@/components/dashboard/RecentActivityTimeline";
+import {
+  createSupplyChainStageMetrics,
+  SupplyChainOverview,
+} from "@/components/dashboard/SupplyChainOverview";
+import { getAuthenticatedPrincipal } from "@/lib/authz";
+import { hasPermission } from "@/lib/authorization";
 import { prisma } from "@/lib/db";
-import {
-  inventoryStatus,
-  inventoryStatusWhere,
-  type InventoryStatus,
-} from "@/lib/inventory-status";
-import { RecordMovementButton } from "@/components/dashboard/RecordMovementButton";
-import { RecentMovementsCard } from "@/components/dashboard/RecentMovementsCard";
-import { requirePagePermission } from "@/lib/authz";
-import { PRODUCT_CLASSIFICATION_LABELS } from "@/lib/production-bom";
+import { inventoryStatusWhere } from "@/lib/inventory-status";
 
-const numberFormatter = new Intl.NumberFormat("ar-DZ", {
+const countFormatter = new Intl.NumberFormat("ar-DZ");
+const quantityFormatter = new Intl.NumberFormat("ar-DZ", {
   maximumFractionDigits: 2,
 });
+const activityQuantityFormatter = new Intl.NumberFormat("ar-DZ", {
+  maximumFractionDigits: 2,
+});
+const analyticsDateFormatter = new Intl.DateTimeFormat("ar-DZ", {
+  month: "short",
+  day: "numeric",
+  timeZone: "Africa/Algiers",
+});
+const analyticsMonthFormatter = new Intl.DateTimeFormat("ar-DZ", {
+  year: "2-digit",
+  month: "short",
+  timeZone: "Africa/Algiers",
+});
 
-const PAGE_SIZE = 10;
+type StatusCount = {
+  status: string;
+  _count: { _all: number };
+};
 
-type SearchParams = Promise<{
-  q?: string | string[];
-  status?: string | string[];
-  page?: string | string[];
+function countForStatus(groups: StatusCount[] | null, status: string) {
+  return groups?.find((group) => group.status === status)?._count._all ?? 0;
+}
+
+function totalCount(groups: StatusCount[] | null) {
+  return groups?.reduce((total, group) => total + group._count._all, 0) ?? 0;
+}
+
+function formatAnalyticsRows(rows: AnalyticsTrendRow[], bucketSize: string) {
+  return rows.map(({ bucket, ...values }) => ({
+    date:
+      bucketSize === "month"
+        ? analyticsMonthFormatter.format(bucket)
+        : analyticsDateFormatter.format(bucket),
+    ...values,
+  }));
+}
+
+function formatAnalyticsStatuses(
+  groups: StatusCount[] | null,
+  statusLabels: Record<string, { label: string; color: string }>,
+): AnalyticsStatus[] {
+  return (groups ?? []).map((group) => ({
+    label: statusLabels[group.status]?.label ?? group.status,
+    value: group._count._all,
+    color: statusLabels[group.status]?.color ?? "#94a3b8",
+  }));
+}
+
+type AnalyticsTrendRow = {
+  bucket: Date;
+  inbound?: number;
+  outbound?: number;
+  created?: number;
+  received?: number;
+  completed?: number;
+  cancelled?: number;
+  fulfilled?: number;
+  delivered?: number;
+  failed?: number;
+};
+
+type DashboardSearchParams = Promise<{
+  period?: string | string[];
 }>;
 
-function firstValue(value: string | string[] | undefined) {
+function firstSearchValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function pageHref(query: string, status: InventoryStatus, page: number) {
-  const params = new URLSearchParams();
-  if (query) params.set("q", query);
-  if (status !== "all") params.set("status", status);
-  params.set("page", String(page));
-  return `/?${params.toString()}`;
-}
-
-export default async function Home({
+export default async function ExecutiveDashboard({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: DashboardSearchParams;
 }) {
-  await requirePagePermission("inventory.read");
+  const principal = await getAuthenticatedPrincipal();
+  if (!principal) redirect("/login");
+
   await connection();
-
   const params = await searchParams;
-  const query = (firstValue(params.q) ?? "").trim().slice(0, 100);
-  const requestedStatus = firstValue(params.status);
-  const status: InventoryStatus =
-    requestedStatus === "normal" ||
-    requestedStatus === "low" ||
-    requestedStatus === "out"
-      ? requestedStatus
-      : "all";
-  const rawPage = firstValue(params.page);
-  const parsedPage = rawPage && /^\d+$/.test(rawPage) ? Number(rawPage) : 1;
-  const requestedPage =
-    Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const requestedPeriod = firstSearchValue(params.period);
+  const period =
+    requestedPeriod === "7d" ||
+    requestedPeriod === "30d" ||
+    requestedPeriod === "90d" ||
+    requestedPeriod === "all"
+      ? requestedPeriod
+      : "30d";
+  const periodDays = { "7d": 7, "30d": 30, "90d": 90 } as const;
+  const [{ periodStart }] = await prisma.$queryRaw<
+    { periodStart: Date | null }[]
+  >`
+    SELECT CASE
+      WHEN ${period === "all"} THEN NULL::timestamptz
+      ELSE now() - (${period === "7d" ? periodDays["7d"] : period === "90d" ? periodDays["90d"] : periodDays["30d"]} * interval '1 day')
+    END AS "periodStart"
+  `;
+  const bucketSize = period === "all" ? "month" : "day";
 
-  const searchFilter: Prisma.ProductWhereInput = query
-    ? {
-        OR: [
-          { name: { contains: query, mode: "insensitive" } },
-          { sku: { contains: query, mode: "insensitive" } },
-        ],
-      }
-    : {};
-  const where: Prisma.ProductWhereInput = {
-    AND: [searchFilter, inventoryStatusWhere(status)],
-  };
+  const canReadInventory = hasPermission(principal.role, "inventory.read");
+  const canReadSuppliers = hasPermission(principal.role, "supplier.read");
+  const canReadPurchaseOrders = hasPermission(
+    principal.role,
+    "purchase_order.read",
+  );
+  const canReadProduction = hasPermission(
+    principal.role,
+    "production.order.read",
+  );
+  const canReadSales = hasPermission(principal.role, "sales.read");
+  const canReadDistribution = hasPermission(
+    principal.role,
+    "distribution.read",
+  );
+
+  if (
+    !canReadInventory &&
+    !canReadSuppliers &&
+    !canReadPurchaseOrders &&
+    !canReadProduction &&
+    !canReadSales &&
+    !canReadDistribution
+  ) {
+    redirect("/forbidden");
+  }
 
   const [
-    totalProducts,
-    inventory,
+    inventoryTotals,
     lowStockCount,
     outOfStockCount,
     availableCount,
-    matchingCount,
-    topProducts,
+    supplierCount,
+    activeSupplierCount,
+    purchaseOrderGroups,
+    productionOrderGroups,
+    customerCount,
+    customerOrderGroups,
+    shipmentGroups,
   ] = await Promise.all([
-    prisma.product.count(),
-    prisma.product.aggregate({
-      _sum: { quantity: true },
-    }),
-    prisma.product.count({ where: inventoryStatusWhere("low") }),
-    prisma.product.count({ where: inventoryStatusWhere("out") }),
-    prisma.product.count({ where: inventoryStatusWhere("normal") }),
-    prisma.product.count({ where }),
-    prisma.product.findMany({
-      select: { name: true, sku: true, quantity: true },
-      orderBy: { quantity: "desc" },
-      take: 8,
-    }),
+    canReadInventory
+      ? prisma.product.aggregate({
+          _count: { _all: true },
+          _sum: { quantity: true },
+        })
+      : Promise.resolve(null),
+    canReadInventory
+      ? prisma.product.count({ where: inventoryStatusWhere("low") })
+      : Promise.resolve(null),
+    canReadInventory
+      ? prisma.product.count({ where: inventoryStatusWhere("out") })
+      : Promise.resolve(null),
+    canReadInventory
+      ? prisma.product.count({ where: inventoryStatusWhere("normal") })
+      : Promise.resolve(null),
+    canReadSuppliers ? prisma.supplier.count() : Promise.resolve(null),
+    canReadSuppliers
+      ? prisma.supplier.count({ where: { isActive: true } })
+      : Promise.resolve(null),
+    canReadPurchaseOrders
+      ? prisma.purchaseOrder.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+        })
+      : Promise.resolve(null),
+    canReadProduction
+      ? prisma.productionOrder.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+        })
+      : Promise.resolve(null),
+    canReadSales ? prisma.customer.count() : Promise.resolve(null),
+    canReadSales
+      ? prisma.customerOrder.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+        })
+      : Promise.resolve(null),
+    canReadDistribution
+      ? prisma.deliveryShipment.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+        })
+      : Promise.resolve(null),
   ]);
 
-  const totalPages = Math.ceil(matchingCount / PAGE_SIZE);
-  const currentPage =
-    totalPages === 0 ? 1 : Math.min(requestedPage, totalPages);
-  const products = await prisma.product.findMany({
-    where,
-    select: {
-      id: true,
-      name: true,
-      sku: true,
-      unit: true,
-      quantity: true,
-      minQuantity: true,
-      classification: true,
-    },
-    orderBy: { createdAt: "desc" },
-    skip: (currentPage - 1) * PAGE_SIZE,
-    take: PAGE_SIZE,
+  const analyticsWhere = periodStart ? { createdAt: { gte: periodStart } } : {};
+  const [
+      inventoryTrendRows,
+      procurementTrendRows,
+      procurementAnalyticsStatuses,
+      productionTrendRows,
+      productionAnalyticsStatuses,
+      salesTrendRows,
+      salesAnalyticsStatuses,
+      distributionTrendRows,
+      distributionAnalyticsStatuses,
+  ] = await Promise.all([
+      canReadInventory
+        ? prisma.$queryRaw<AnalyticsTrendRow[]>`
+            SELECT
+              date_trunc(${bucketSize}, "createdAt") AS bucket,
+              COALESCE(SUM("quantity") FILTER (WHERE "type" = 'IN'), 0)::float8 AS inbound,
+              COALESCE(SUM("quantity") FILTER (WHERE "type" = 'OUT'), 0)::float8 AS outbound
+            FROM "StockMovement"
+            WHERE (${periodStart}::timestamptz IS NULL OR "createdAt" >= ${periodStart})
+            GROUP BY bucket
+            ORDER BY bucket ASC
+          `
+        : Promise.resolve([] as AnalyticsTrendRow[]),
+      canReadPurchaseOrders
+        ? prisma.$queryRaw<AnalyticsTrendRow[]>`
+            SELECT
+              date_trunc(${bucketSize}, event_time) AS bucket,
+              COUNT(*) FILTER (WHERE event_type = 'created')::int AS created,
+              COUNT(*) FILTER (WHERE event_type = 'received')::int AS received
+            FROM (
+              SELECT "createdAt" AS event_time, 'created'::text AS event_type
+              FROM "PurchaseOrder"
+              WHERE (${periodStart}::timestamptz IS NULL OR "createdAt" >= ${periodStart})
+              UNION ALL
+              SELECT "createdAt" AS event_time, 'received'::text AS event_type
+              FROM "PurchaseOrderReceipt"
+              WHERE (${periodStart}::timestamptz IS NULL OR "createdAt" >= ${periodStart})
+            ) AS procurement_events
+            GROUP BY bucket
+            ORDER BY bucket ASC
+          `
+        : Promise.resolve([] as AnalyticsTrendRow[]),
+      canReadPurchaseOrders
+        ? prisma.purchaseOrder.groupBy({
+            by: ["status"],
+            where: analyticsWhere,
+            _count: { _all: true },
+          })
+        : Promise.resolve(null),
+      canReadProduction
+        ? prisma.$queryRaw<AnalyticsTrendRow[]>`
+            SELECT
+              date_trunc(${bucketSize}, event_time) AS bucket,
+              COUNT(*) FILTER (WHERE event_type = 'created')::int AS created,
+              COUNT(*) FILTER (WHERE event_type = 'completed')::int AS completed,
+              COUNT(*) FILTER (WHERE event_type = 'cancelled')::int AS cancelled
+            FROM (
+              SELECT "createdAt" AS event_time, 'created'::text AS event_type
+              FROM "ProductionOrder"
+              WHERE (${periodStart}::timestamptz IS NULL OR "createdAt" >= ${periodStart})
+              UNION ALL
+              SELECT "completedAt", 'completed'::text
+              FROM "ProductionOrder"
+              WHERE "completedAt" IS NOT NULL
+                AND (${periodStart}::timestamptz IS NULL OR "completedAt" >= ${periodStart})
+              UNION ALL
+              SELECT "cancelledAt", 'cancelled'::text
+              FROM "ProductionOrder"
+              WHERE "cancelledAt" IS NOT NULL
+                AND (${periodStart}::timestamptz IS NULL OR "cancelledAt" >= ${periodStart})
+            ) AS production_events
+            GROUP BY bucket
+            ORDER BY bucket ASC
+          `
+        : Promise.resolve([] as AnalyticsTrendRow[]),
+      canReadProduction
+        ? prisma.productionOrder.groupBy({
+            by: ["status"],
+            where: analyticsWhere,
+            _count: { _all: true },
+          })
+        : Promise.resolve(null),
+      canReadSales
+        ? prisma.$queryRaw<AnalyticsTrendRow[]>`
+            SELECT
+              date_trunc(${bucketSize}, event_time) AS bucket,
+              COUNT(*) FILTER (WHERE event_type = 'created')::int AS created,
+              COUNT(*) FILTER (WHERE event_type = 'fulfilled')::int AS fulfilled
+            FROM (
+              SELECT "createdAt" AS event_time, 'created'::text AS event_type
+              FROM "CustomerOrder"
+              WHERE (${periodStart}::timestamptz IS NULL OR "createdAt" >= ${periodStart})
+              UNION ALL
+              SELECT "fulfilledAt", 'fulfilled'::text
+              FROM "CustomerOrder"
+              WHERE "fulfilledAt" IS NOT NULL
+                AND (${periodStart}::timestamptz IS NULL OR "fulfilledAt" >= ${periodStart})
+            ) AS sales_events
+            GROUP BY bucket
+            ORDER BY bucket ASC
+          `
+        : Promise.resolve([] as AnalyticsTrendRow[]),
+      canReadSales
+        ? prisma.customerOrder.groupBy({
+            by: ["status"],
+            where: analyticsWhere,
+            _count: { _all: true },
+          })
+        : Promise.resolve(null),
+      canReadDistribution
+        ? prisma.$queryRaw<AnalyticsTrendRow[]>`
+            SELECT
+              date_trunc(${bucketSize}, event_time) AS bucket,
+              COUNT(*) FILTER (WHERE event_type = 'delivered')::int AS delivered,
+              COUNT(*) FILTER (WHERE event_type = 'failed')::int AS failed
+            FROM (
+              SELECT "deliveredAt" AS event_time, 'delivered'::text AS event_type
+              FROM "DeliveryShipment"
+              WHERE "deliveredAt" IS NOT NULL
+                AND (${periodStart}::timestamptz IS NULL OR "deliveredAt" >= ${periodStart})
+              UNION ALL
+              SELECT "createdAt", 'failed'::text
+              FROM "DeliveryEvent"
+              WHERE "type" = 'STATUS_CHANGED' AND "toStatus" = 'DELIVERY_FAILED'
+                AND (${periodStart}::timestamptz IS NULL OR "createdAt" >= ${periodStart})
+            ) AS delivery_events
+            GROUP BY bucket
+            ORDER BY bucket ASC
+          `
+        : Promise.resolve([] as AnalyticsTrendRow[]),
+      canReadDistribution
+        ? prisma.deliveryShipment.groupBy({
+            by: ["status"],
+            where: analyticsWhere,
+            _count: { _all: true },
+          })
+        : Promise.resolve(null),
+  ]);
+
+  const [
+      recentPurchaseOrders,
+    recentReceipts,
+    recentMovements,
+    recentProductionOrders,
+    recentCustomerOrders,
+    recentDeliveryEvents,
+    recentDispatchedRuns,
+  ] = await Promise.all([
+    canReadPurchaseOrders
+      ? prisma.purchaseOrder.findMany({
+          select: {
+            id: true,
+            orderNumber: true,
+            createdAt: true,
+            submittedAt: true,
+            cancelledAt: true,
+            supplier: { select: { name: true } },
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 8,
+        })
+      : Promise.resolve([]),
+    canReadPurchaseOrders
+      ? prisma.purchaseOrderReceipt.findMany({
+          select: {
+            id: true,
+            createdAt: true,
+            purchaseOrder: {
+              select: { id: true, orderNumber: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 8,
+        })
+      : Promise.resolve([]),
+    canReadInventory
+      ? prisma.stockMovement.findMany({
+          select: {
+            id: true,
+            type: true,
+            quantity: true,
+            createdAt: true,
+            product: { select: { name: true, sku: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 8,
+        })
+      : Promise.resolve([]),
+    canReadProduction
+      ? prisma.productionOrder.findMany({
+          select: {
+            id: true,
+            orderNumber: true,
+            createdAt: true,
+            startedAt: true,
+            completedAt: true,
+            cancelledAt: true,
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 8,
+        })
+      : Promise.resolve([]),
+    canReadSales
+      ? prisma.customerOrder.findMany({
+          select: {
+            id: true,
+            orderNumber: true,
+            customerName: true,
+            createdAt: true,
+            confirmedAt: true,
+            fulfilledAt: true,
+            cancelledAt: true,
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 8,
+        })
+      : Promise.resolve([]),
+    canReadDistribution
+      ? prisma.deliveryEvent.findMany({
+          where: {
+            type: { in: ["CREATED", "STATUS_CHANGED", "RESCHEDULED"] },
+          },
+          select: {
+            id: true,
+            type: true,
+            toStatus: true,
+            createdAt: true,
+            shipment: {
+              select: { id: true, reference: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 12,
+        })
+      : Promise.resolve([]),
+    canReadDistribution
+      ? prisma.deliveryRun.findMany({
+          where: { dispatchedAt: { not: null } },
+          select: {
+            id: true,
+            runNumber: true,
+            dispatchedAt: true,
+          },
+          orderBy: { dispatchedAt: "desc" },
+          take: 8,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const analyticsModules: AnalyticsModule[] = [];
+  if (canReadInventory) {
+    analyticsModules.push({
+      key: "inventory",
+      title: "حركة المخزون",
+      description: "كميات الإدخال والصرف المسجلة حسب الفترة.",
+      trendLabel: "حركة المخزون",
+      data: formatAnalyticsRows(inventoryTrendRows, bucketSize),
+      series: [
+        { key: "inbound", label: "دخول", color: "#34d399" },
+        { key: "outbound", label: "صرف", color: "#fb7185" },
+      ],
+      statuses: [],
+      chartType: "line",
+      href: "/inventory",
+    });
+  }
+  if (canReadPurchaseOrders) {
+    analyticsModules.push({
+      key: "procurement",
+      title: "المشتريات والاستلام",
+      description: "أوامر الشراء الجديدة وعمليات الاستلام.",
+      trendLabel: "أوامر الشراء والاستلام",
+      data: formatAnalyticsRows(procurementTrendRows, bucketSize),
+      series: [
+        { key: "created", label: "أوامر شراء", color: "#a78bfa" },
+        { key: "received", label: "استلامات", color: "#34d399" },
+      ],
+      statuses: formatAnalyticsStatuses(procurementAnalyticsStatuses, {
+        DRAFT: { label: "مسودة", color: "#94a3b8" },
+        SUBMITTED: { label: "مرسلة", color: "#60a5fa" },
+        PARTIALLY_RECEIVED: { label: "استلام جزئي", color: "#fbbf24" },
+        RECEIVED: { label: "مستلمة", color: "#34d399" },
+        CANCELLED: { label: "ملغاة", color: "#fb7185" },
+      }),
+      chartType: "bar",
+      href: "/purchase-orders",
+    });
+  }
+  if (canReadProduction) {
+    analyticsModules.push({
+      key: "production",
+      title: "أداء الإنتاج",
+      description: "أوامر الإنتاج المنشأة والمكتملة والملغاة.",
+      trendLabel: "أوامر الإنتاج",
+      data: formatAnalyticsRows(productionTrendRows, bucketSize),
+      series: [
+        { key: "created", label: "منشأة", color: "#60a5fa" },
+        { key: "completed", label: "مكتملة", color: "#34d399" },
+        { key: "cancelled", label: "ملغاة", color: "#fb7185" },
+      ],
+      statuses: formatAnalyticsStatuses(productionAnalyticsStatuses, {
+        DRAFT: { label: "مسودة", color: "#94a3b8" },
+        IN_PROGRESS: { label: "قيد التنفيذ", color: "#60a5fa" },
+        COMPLETED: { label: "مكتملة", color: "#34d399" },
+        CANCELLED: { label: "ملغاة", color: "#fb7185" },
+      }),
+      chartType: "line",
+      href: "/production",
+    });
+  }
+  if (canReadSales) {
+    analyticsModules.push({
+      key: "sales",
+      title: "طلبات العملاء",
+      description: "الطلبات المنشأة والمنفذة دون مؤشرات مالية.",
+      trendLabel: "طلبات العملاء",
+      data: formatAnalyticsRows(salesTrendRows, bucketSize),
+      series: [
+        { key: "created", label: "طلبات منشأة", color: "#818cf8" },
+        { key: "fulfilled", label: "طلبات منفذة", color: "#34d399" },
+      ],
+      statuses: formatAnalyticsStatuses(salesAnalyticsStatuses, {
+        DRAFT: { label: "مسودة", color: "#94a3b8" },
+        CONFIRMED: { label: "مؤكدة", color: "#60a5fa" },
+        FULFILLED: { label: "منفذة", color: "#34d399" },
+        CANCELLED: { label: "ملغاة", color: "#fb7185" },
+      }),
+      chartType: "bar",
+      href: "/sales/orders",
+    });
+  }
+  if (canReadDistribution) {
+    analyticsModules.push({
+      key: "distribution",
+      title: "التوزيع والتسليم",
+      description: "الشحنات المسلّمة ومحاولات التسليم المتعذرة.",
+      trendLabel: "التسليم ومحاولات التوصيل",
+      data: formatAnalyticsRows(distributionTrendRows, bucketSize),
+      series: [
+        { key: "delivered", label: "تم التسليم", color: "#34d399" },
+        { key: "failed", label: "محاولات متعذرة", color: "#fb7185" },
+      ],
+      statuses: formatAnalyticsStatuses(distributionAnalyticsStatuses, {
+        PREPARING: { label: "قيد التجهيز", color: "#fbbf24" },
+        READY_FOR_DISPATCH: { label: "جاهزة للإرسال", color: "#38bdf8" },
+        DISPATCHED: { label: "مرسلة", color: "#818cf8" },
+        IN_TRANSIT: { label: "قيد التوصيل", color: "#60a5fa" },
+        DELIVERED: { label: "تم التسليم", color: "#34d399" },
+        DELIVERY_FAILED: { label: "تعذّر التسليم", color: "#fb7185" },
+      }),
+      chartType: "bar",
+      href: "/distribution/deliveries",
+    });
+  }
+
+  const sections: {
+    title: string;
+    description: string;
+    icon: LucideIcon;
+    metrics: ExecutiveMetric[];
+  }[] = [];
+
+  if (canReadInventory && inventoryTotals) {
+    sections.push({
+      title: "المخزون",
+      description: "مستويات الأصناف والكميات المتاحة حاليًا.",
+      icon: Boxes,
+      metrics: [
+        {
+          label: "إجمالي المنتجات",
+          value: countFormatter.format(inventoryTotals._count._all),
+          href: "/inventory",
+          icon: Boxes,
+          accent: "blue",
+        },
+        {
+          label: "إجمالي وحدات المخزون",
+          value: quantityFormatter.format(inventoryTotals._sum.quantity ?? 0),
+          href: "/inventory",
+          icon: PackageOpen,
+          accent: "violet",
+        },
+        {
+          label: "منتجات متوفرة",
+          value: countFormatter.format(availableCount ?? 0),
+          href: "/inventory?status=normal",
+          icon: CheckCircle2,
+          accent: "emerald",
+        },
+        {
+          label: "منتجات منخفضة المخزون",
+          value: countFormatter.format(lowStockCount ?? 0),
+          href: "/inventory?status=low",
+          icon: PackageCheck,
+          accent: "amber",
+        },
+        {
+          label: "منتجات نفد مخزونها",
+          value: countFormatter.format(outOfStockCount ?? 0),
+          href: "/inventory?status=out",
+          icon: PackageOpen,
+          accent: "rose",
+        },
+      ],
+    });
+  }
+
+  if (canReadSuppliers || canReadPurchaseOrders) {
+    const metrics: ExecutiveMetric[] = [];
+    if (canReadSuppliers) {
+      metrics.push({
+        label: "إجمالي الموردين",
+        value: countFormatter.format(supplierCount ?? 0),
+        href: "/suppliers",
+        icon: Building2,
+        accent: "blue",
+      });
+    }
+    if (canReadPurchaseOrders) {
+      metrics.push(
+        {
+          label: "طلبات الشراء",
+          value: countFormatter.format(totalCount(purchaseOrderGroups)),
+          href: "/purchase-orders",
+          icon: ShoppingCart,
+          accent: "violet",
+        },
+        {
+          label: "طلبات شراء قيد المعالجة",
+          value: countFormatter.format(
+            countForStatus(purchaseOrderGroups, "DRAFT") +
+              countForStatus(purchaseOrderGroups, "SUBMITTED") +
+              countForStatus(purchaseOrderGroups, "PARTIALLY_RECEIVED"),
+          ),
+          href: "/purchase-orders",
+          icon: ClipboardList,
+          accent: "amber",
+        },
+      );
+    }
+    sections.push({
+      title: "المشتريات",
+      description: "متابعة الموردين وحالة أوامر الشراء.",
+      icon: ShoppingCart,
+      metrics,
+    });
+  }
+
+  if (canReadProduction) {
+    sections.push({
+      title: "الإنتاج",
+      description: "رؤية موجزة لحالة أوامر الإنتاج.",
+      icon: Factory,
+      metrics: [
+        {
+          label: "أوامر الإنتاج",
+          value: countFormatter.format(totalCount(productionOrderGroups)),
+          href: "/production",
+          icon: Factory,
+          accent: "blue",
+        },
+        {
+          label: "أوامر قيد التنفيذ",
+          value: countFormatter.format(
+            countForStatus(productionOrderGroups, "IN_PROGRESS"),
+          ),
+          href: "/production",
+          icon: PackageOpen,
+          accent: "amber",
+        },
+        {
+          label: "أوامر مكتملة",
+          value: countFormatter.format(
+            countForStatus(productionOrderGroups, "COMPLETED"),
+          ),
+          href: "/production",
+          icon: CheckCircle2,
+          accent: "emerald",
+        },
+      ],
+    });
+  }
+
+  if (canReadSales) {
+    sections.push({
+      title: "المبيعات",
+      description: "متابعة العملاء وطلبات البيع المفتوحة.",
+      icon: ShoppingBag,
+      metrics: [
+        {
+          label: "إجمالي العملاء",
+          value: countFormatter.format(customerCount ?? 0),
+          href: "/sales/customers",
+          icon: UsersRound,
+          accent: "blue",
+        },
+        {
+          label: "طلبات العملاء",
+          value: countFormatter.format(totalCount(customerOrderGroups)),
+          href: "/sales/orders",
+          icon: ShoppingBag,
+          accent: "violet",
+        },
+        {
+          label: "طلبات بانتظار التنفيذ",
+          value: countFormatter.format(
+            countForStatus(customerOrderGroups, "CONFIRMED"),
+          ),
+          href: "/sales/orders",
+          icon: ClipboardList,
+          accent: "amber",
+        },
+      ],
+    });
+  }
+
+  if (canReadDistribution) {
+    sections.push({
+      title: "التوزيع",
+      description: "حالة الشحنات الجاهزة للتوزيع والتسليم.",
+      icon: Truck,
+      metrics: [
+        {
+          label: "إجمالي الشحنات",
+          value: countFormatter.format(totalCount(shipmentGroups)),
+          href: "/distribution/deliveries",
+          icon: Truck,
+          accent: "blue",
+        },
+        {
+          label: "شحنات بانتظار الإرسال",
+          value: countFormatter.format(
+            countForStatus(shipmentGroups, "READY_FOR_DISPATCH"),
+          ),
+          href: "/distribution/deliveries",
+          icon: PackageOpen,
+          accent: "amber",
+        },
+        {
+          label: "شحنات تم تسليمها",
+          value: countFormatter.format(
+            countForStatus(shipmentGroups, "DELIVERED"),
+          ),
+          href: "/distribution/deliveries",
+          icon: CheckCircle2,
+          accent: "emerald",
+        },
+      ],
+    });
+  }
+
+  const stageMetrics = createSupplyChainStageMetrics({
+    count: (value) => countFormatter.format(value),
+    canReadSuppliers,
+    supplierCount,
+    activeSupplierCount,
+    canReadPurchaseOrders,
+    purchaseOrderCount: totalCount(purchaseOrderGroups),
+    pendingPurchaseOrderCount:
+      countForStatus(purchaseOrderGroups, "DRAFT") +
+      countForStatus(purchaseOrderGroups, "SUBMITTED") +
+      countForStatus(purchaseOrderGroups, "PARTIALLY_RECEIVED"),
+    canReadInventory,
+    productCount: inventoryTotals?._count._all ?? null,
+    lowStockCount,
+    availableCount,
+    canReadProduction,
+    productionOrderCount: totalCount(productionOrderGroups),
+    inProgressProductionCount: countForStatus(
+      productionOrderGroups,
+      "IN_PROGRESS",
+    ),
+    completedProductionCount: countForStatus(
+      productionOrderGroups,
+      "COMPLETED",
+    ),
+    canReadSales,
+    customerOrderCount: totalCount(customerOrderGroups),
+    confirmedCustomerOrderCount: countForStatus(
+      customerOrderGroups,
+      "CONFIRMED",
+    ),
+    canReadDistribution,
+    readyForDispatchCount: countForStatus(
+      shipmentGroups,
+      "READY_FOR_DISPATCH",
+    ),
+    inTransitShipmentCount: countForStatus(shipmentGroups, "IN_TRANSIT"),
+    deliveredShipmentCount: countForStatus(shipmentGroups, "DELIVERED"),
   });
 
-  const stockStatus: StockStatusDatum[] = [
-    { name: "متوفر", value: availableCount, color: "#34d399" },
-    { name: "مخزون منخفض", value: lowStockCount, color: "#a78bfa" },
-    { name: "نفد المخزون", value: outOfStockCount, color: "#fb7185" },
-  ];
+  const alerts: OperationalAlert[] = [];
 
-  const showingFrom = matchingCount ? (currentPage - 1) * PAGE_SIZE + 1 : 0;
-  const showingTo = Math.min(currentPage * PAGE_SIZE, matchingCount);
+  if (canReadInventory) {
+    alerts.push(
+      {
+        title: "منتجات نفد مخزونها",
+        description: "تحقق من توافر هذه المنتجات وخطط لإعادة التزويد.",
+        category: "المخزون",
+        count: outOfStockCount ?? 0,
+        href: "/inventory?status=out",
+        severity: "critical",
+      },
+      {
+        title: "منتجات بمخزون منخفض",
+        description: "مستوى هذه المنتجات عند حد إعادة الطلب أو دونه.",
+        category: "المخزون",
+        count: lowStockCount ?? 0,
+        href: "/inventory?status=low",
+        severity: "warning",
+      },
+    );
+  }
+
+  if (canReadPurchaseOrders) {
+    alerts.push(
+      {
+        title: "طلبات شراء بانتظار الإجراء",
+        description: "طلبات الشراء المسجلة كمسودات ولم تُرسل بعد.",
+        category: "المشتريات",
+        count: countForStatus(purchaseOrderGroups, "DRAFT"),
+        href: "/purchase-orders",
+        severity: "information",
+      },
+      {
+        title: "طلبات شراء بانتظار الاستلام",
+        description: "طلبات مرسلة أو مستلمة جزئيًا وتحتاج إلى متابعة الاستلام.",
+        category: "المشتريات",
+        count:
+          countForStatus(purchaseOrderGroups, "SUBMITTED") +
+          countForStatus(purchaseOrderGroups, "PARTIALLY_RECEIVED"),
+        href: "/purchase-orders",
+        severity: "warning",
+      },
+    );
+  }
+
+  if (canReadProduction) {
+    alerts.push(
+      {
+        title: "أوامر إنتاج بانتظار البدء",
+        description: "أوامر إنتاج بحالة مسودة تنتظر بدء الإجراء.",
+        category: "الإنتاج",
+        count: countForStatus(productionOrderGroups, "DRAFT"),
+        href: "/production",
+        severity: "information",
+      },
+      {
+        title: "أوامر إنتاج قيد التنفيذ",
+        description: "أوامر الإنتاج النشطة حاليًا.",
+        category: "الإنتاج",
+        count: countForStatus(productionOrderGroups, "IN_PROGRESS"),
+        href: "/production",
+        severity: "information",
+      },
+    );
+  }
+
+  if (canReadSales) {
+    alerts.push(
+      {
+        title: "طلبات عملاء بانتظار التأكيد",
+        description: "طلبات مسجلة كمسودات وتنتظر مراجعة فريق المبيعات.",
+        category: "المبيعات",
+        count: countForStatus(customerOrderGroups, "DRAFT"),
+        href: "/sales/orders",
+        severity: "information",
+      },
+      {
+        title: "طلبات مؤكدة بانتظار التنفيذ",
+        description: "طلبات العملاء المؤكدة ولم تُستكمل بعد.",
+        category: "المبيعات",
+        count: countForStatus(customerOrderGroups, "CONFIRMED"),
+        href: "/sales/orders",
+        severity: "warning",
+      },
+    );
+  }
+
+  if (canReadDistribution) {
+    alerts.push(
+      {
+        title: "شحنات جاهزة بانتظار الإرسال",
+        description: "شحنات جاهزة ولم يبدأ إرسالها بعد.",
+        category: "التوزيع",
+        count: countForStatus(shipmentGroups, "READY_FOR_DISPATCH"),
+        href: "/distribution/deliveries",
+        severity: "warning",
+      },
+      {
+        title: "شحنات قيد التوصيل",
+        description: "شحنات أُرسلت وما زالت في مرحلة التوصيل.",
+        category: "التوزيع",
+        count: countForStatus(shipmentGroups, "IN_TRANSIT"),
+        href: "/distribution/deliveries",
+        severity: "information",
+      },
+      {
+        title: "محاولات توصيل متعذرة",
+        description: "راجع الشحنات التي تعذّر تسليمها لمتابعة الإجراء المناسب.",
+        category: "التوزيع",
+        count: countForStatus(shipmentGroups, "DELIVERY_FAILED"),
+        href: "/distribution/deliveries",
+        severity: "warning",
+      },
+    );
+  }
+
+  const activities: TimelineActivity[] = [];
+  const addActivity = (
+    activity: TimelineActivity,
+  ) => activities.push(activity);
+
+  for (const order of recentPurchaseOrders) {
+    addActivity({
+      id: `purchase-created-${order.id}`,
+      title: "إنشاء أمر شراء",
+      description: `تم تسجيل أمر شراء للمورد ${order.supplier.name}.`,
+      category: "المشتريات",
+      reference: order.orderNumber,
+      occurredAt: order.createdAt,
+      href: `/purchase-orders/${order.id}`,
+    });
+    if (order.submittedAt) {
+      addActivity({
+        id: `purchase-submitted-${order.id}`,
+        title: "إرسال أمر شراء",
+        description: "تم إرسال أمر الشراء إلى المورد.",
+        category: "المشتريات",
+        reference: order.orderNumber,
+        occurredAt: order.submittedAt,
+        href: `/purchase-orders/${order.id}`,
+      });
+    }
+    if (order.cancelledAt) {
+      addActivity({
+        id: `purchase-cancelled-${order.id}`,
+        title: "إلغاء أمر شراء",
+        description: "تم تسجيل إلغاء أمر الشراء.",
+        category: "المشتريات",
+        reference: order.orderNumber,
+        occurredAt: order.cancelledAt,
+        href: `/purchase-orders/${order.id}`,
+      });
+    }
+  }
+
+  for (const receipt of recentReceipts) {
+    addActivity({
+      id: `purchase-receipt-${receipt.id}`,
+      title: "استلام مشتريات",
+      description: "تم تسجيل استلام على أمر الشراء.",
+      category: "المشتريات",
+      reference: receipt.purchaseOrder.orderNumber,
+      occurredAt: receipt.createdAt,
+      href: `/purchase-orders/${receipt.purchaseOrder.id}`,
+    });
+  }
+
+  for (const movement of recentMovements) {
+    const isInbound = movement.type === "IN";
+    addActivity({
+      id: `stock-movement-${movement.id}`,
+      title: isInbound ? "دخول مخزون" : "صرف من المخزون",
+      description: `${activityQuantityFormatter.format(movement.quantity)} ${isInbound ? "وحدة أضيفت إلى" : "وحدة صُرفت من"} ${movement.product.name}.`,
+      category: "المخزون",
+      reference: movement.product.sku,
+      occurredAt: movement.createdAt,
+      href: "/inventory",
+    });
+  }
+
+  for (const order of recentProductionOrders) {
+    addActivity({
+      id: `production-created-${order.id}`,
+      title: "إنشاء أمر إنتاج",
+      description: "تم تسجيل أمر إنتاج جديد.",
+      category: "الإنتاج",
+      reference: order.orderNumber,
+      occurredAt: order.createdAt,
+      href: `/production/orders/${order.id}`,
+    });
+    if (order.startedAt) {
+      addActivity({
+        id: `production-started-${order.id}`,
+        title: "بدء أمر إنتاج",
+        description: "بدأ تنفيذ أمر الإنتاج.",
+        category: "الإنتاج",
+        reference: order.orderNumber,
+        occurredAt: order.startedAt,
+        href: `/production/orders/${order.id}`,
+      });
+    }
+    if (order.completedAt) {
+      addActivity({
+        id: `production-completed-${order.id}`,
+        title: "اكتمال أمر إنتاج",
+        description: "تم تسجيل اكتمال أمر الإنتاج.",
+        category: "الإنتاج",
+        reference: order.orderNumber,
+        occurredAt: order.completedAt,
+        href: `/production/orders/${order.id}`,
+      });
+    }
+    if (order.cancelledAt) {
+      addActivity({
+        id: `production-cancelled-${order.id}`,
+        title: "إلغاء أمر إنتاج",
+        description: "تم تسجيل إلغاء أمر الإنتاج.",
+        category: "الإنتاج",
+        reference: order.orderNumber,
+        occurredAt: order.cancelledAt,
+        href: `/production/orders/${order.id}`,
+      });
+    }
+  }
+
+  for (const order of recentCustomerOrders) {
+    addActivity({
+      id: `customer-order-created-${order.id}`,
+      title: "إنشاء طلب عميل",
+      description: `تم تسجيل طلب العميل ${order.customerName}.`,
+      category: "المبيعات",
+      reference: order.orderNumber,
+      occurredAt: order.createdAt,
+      href: `/sales/orders/${order.id}`,
+    });
+    if (order.confirmedAt) {
+      addActivity({
+        id: `customer-order-confirmed-${order.id}`,
+        title: "تأكيد طلب عميل",
+        description: "تم تأكيد الطلب وحجز المنتجات.",
+        category: "المبيعات",
+        reference: order.orderNumber,
+        occurredAt: order.confirmedAt,
+        href: `/sales/orders/${order.id}`,
+      });
+    }
+    if (order.fulfilledAt) {
+      addActivity({
+        id: `customer-order-fulfilled-${order.id}`,
+        title: "تنفيذ طلب عميل",
+        description: "تم تسجيل اكتمال تنفيذ الطلب.",
+        category: "المبيعات",
+        reference: order.orderNumber,
+        occurredAt: order.fulfilledAt,
+        href: `/sales/orders/${order.id}`,
+      });
+    }
+    if (order.cancelledAt) {
+      addActivity({
+        id: `customer-order-cancelled-${order.id}`,
+        title: "إلغاء طلب عميل",
+        description: "تم تسجيل إلغاء طلب العميل.",
+        category: "المبيعات",
+        reference: order.orderNumber,
+        occurredAt: order.cancelledAt,
+        href: `/sales/orders/${order.id}`,
+      });
+    }
+  }
+
+  for (const event of recentDeliveryEvents) {
+    if (event.type === "CREATED") {
+      addActivity({
+        id: `shipment-created-${event.id}`,
+        title: "إنشاء شحنة",
+        description: "تم إنشاء شحنة توصيل لطلب عميل.",
+        category: "التوزيع",
+        reference: event.shipment.reference,
+        occurredAt: event.createdAt,
+        href: `/distribution/deliveries/${event.shipment.id}`,
+      });
+      continue;
+    }
+    if (event.type === "RESCHEDULED") {
+      addActivity({
+        id: `shipment-rescheduled-${event.id}`,
+        title: "إعادة جدولة شحنة",
+        description: "تم تحديث موعد التسليم المتوقع.",
+        category: "التوزيع",
+        reference: event.shipment.reference,
+        occurredAt: event.createdAt,
+        href: `/distribution/deliveries/${event.shipment.id}`,
+      });
+      continue;
+    }
+
+    const statusDetails: Record<
+      string,
+      { title: string; description: string }
+    > = {
+      DISPATCHED: {
+        title: "إرسال شحنة",
+        description: "بدأت الشحنة مرحلة التوزيع.",
+      },
+      IN_TRANSIT: {
+        title: "بدء توصيل شحنة",
+        description: "الشحنة في طريقها إلى العميل.",
+      },
+      DELIVERED: {
+        title: "تسليم شحنة",
+        description: "تم تسجيل تسليم الشحنة.",
+      },
+      DELIVERY_FAILED: {
+        title: "محاولة توصيل متعذرة",
+        description: "تم تسجيل تعذّر تسليم الشحنة.",
+      },
+    };
+    const statusDetail = event.toStatus
+      ? statusDetails[event.toStatus]
+      : undefined;
+    if (statusDetail) {
+      addActivity({
+        id: `shipment-status-${event.id}`,
+        title: statusDetail.title,
+        description: statusDetail.description,
+        category: "التوزيع",
+        reference: event.shipment.reference,
+        occurredAt: event.createdAt,
+        href: `/distribution/deliveries/${event.shipment.id}`,
+      });
+    }
+  }
+
+  for (const run of recentDispatchedRuns) {
+    if (!run.dispatchedAt) continue;
+    addActivity({
+      id: `delivery-run-dispatched-${run.id}`,
+      title: "إرسال مسار توصيل",
+      description: "تم إرسال مسار التوصيل للشحنات المسندة إليه.",
+      category: "التوزيع",
+      reference: run.runNumber,
+      occurredAt: run.dispatchedAt,
+      href: `/distribution/runs/${run.id}`,
+    });
+  }
+
+  activities.sort(
+    (left, right) => right.occurredAt.getTime() - left.occurredAt.getTime(),
+  );
+  const recentActivities = activities.slice(0, 12);
+  const activityModuleLinks = [
+    canReadPurchaseOrders
+      ? { label: "المشتريات", href: "/purchase-orders" }
+      : null,
+    canReadInventory ? { label: "المخزون", href: "/inventory" } : null,
+    canReadProduction ? { label: "الإنتاج", href: "/production" } : null,
+    canReadSales ? { label: "المبيعات", href: "/sales/orders" } : null,
+    canReadDistribution
+      ? { label: "التوزيع", href: "/distribution/deliveries" }
+      : null,
+  ].filter((link) => link !== null);
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
-      <section className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="mb-2 text-xs font-semibold tracking-[0.18em] text-sky-300">
-            نظرة عامة
-          </p>
-          <h2 className="text-xl font-semibold text-white sm:text-2xl">
-            ملخص المخزون
-          </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            متابعة مستويات الأصناف والكميات المتاحة في مخازنك.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-2 text-xs text-emerald-300">
-            <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]" />
-            بيانات المخزون مباشرة
-          </div>
-          <div className="flex items-center gap-2">
-            <RecordMovementButton />
-            <AddProductDialog />
-          </div>
-        </div>
-      </section>
-
-      <section
-        aria-label="إحصائيات المخزون"
-        className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5"
-      >
-        <StatCard
-          label="عدد الأصناف"
-          value={numberFormatter.format(totalProducts)}
-          icon={Boxes}
-          accent="amber"
-        />
-        <StatCard
-          label="إجمالي الكمية"
-          value={numberFormatter.format(inventory._sum.quantity ?? 0)}
-          icon={Package}
-          accent="blue"
-        />
-        <StatCard
-          label="أصناف منخفضة المخزون"
-          value={numberFormatter.format(lowStockCount)}
-          icon={AlertTriangle}
-          accent="violet"
-        />
-        <StatCard
-          label="أصناف نفذت"
-          value={numberFormatter.format(outOfStockCount)}
-          icon={PackageX}
-          accent="rose"
-        />
-        <StatCard
-          label="أصناف متوفرة"
-          value={numberFormatter.format(availableCount)}
-          icon={CircleCheck}
-          accent="emerald"
-        />
-      </section>
-
-      <section
-        aria-label="تحليلات المخزون"
-        className="grid min-w-0 gap-4 xl:grid-cols-[0.9fr_1.1fr]"
-      >
-        <StockStatusChart data={stockStatus} total={totalProducts} />
-        <TopProductsChart data={topProducts} />
-      </section>
-
-      <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-900/75 shadow-xl shadow-black/10">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-4 sm:px-6">
-          <div>
-            <h2 className="text-base font-semibold text-white">قائمة الأصناف</h2>
-            <p className="mt-1 text-xs text-slate-400">
-              تفاصيل الكميات وحدود إعادة الطلب لكل صنف.
+    <main className="mx-auto w-full max-w-[1600px] space-y-7 p-4 sm:p-6 lg:p-8">
+      <section className="relative isolate overflow-hidden rounded-2xl border border-sky-300/[0.12] bg-gradient-to-br from-slate-900 via-slate-900 to-sky-950/60 px-5 py-6 shadow-xl shadow-black/15 sm:px-7 sm:py-8">
+        <div className="pointer-events-none absolute -end-16 -top-28 -z-10 size-72 rounded-full bg-sky-400/[0.07] blur-3xl" />
+        <div className="flex flex-wrap items-end justify-between gap-5">
+          <div className="max-w-2xl">
+            <p className="mb-2.5 text-[11px] font-semibold tracking-[0.16em] text-sky-300">
+              لوحة الإدارة التنفيذية
+            </p>
+            <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-[2rem]">
+              مرحبًا بك في ImdadDZ
+            </h2>
+            <p className="mt-2.5 max-w-xl text-sm leading-6 text-slate-400">
+              نظرة واضحة على مؤشرات العمليات عبر وحدات سلسلة التوريد.
             </p>
           </div>
-          <Badge className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800">
-            {numberFormatter.format(matchingCount)} صنف
-          </Badge>
-        </div>
-
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-white/[0.06] px-5 py-4 sm:px-6">
-          <form method="get" action="/" className="flex flex-wrap items-end gap-3">
-            {query && <input type="hidden" name="q" value={query} />}
-            <label className="grid gap-1.5 text-xs text-slate-400">
-              تصفية حسب الحالة
-              <select
-                aria-label="تصفية الأصناف حسب حالة المخزون"
-                name="status"
-                defaultValue={status}
-                className="h-10 min-w-44 rounded-xl border border-white/[0.08] bg-slate-900 px-3 text-sm text-slate-100 outline-none transition focus-visible:border-sky-400/50 focus-visible:ring-2 focus-visible:ring-sky-400/20"
-              >
-                <option value="all">كل الأصناف</option>
-                <option value="normal">متوفر</option>
-                <option value="low">مخزون منخفض</option>
-                <option value="out">نفد المخزون</option>
-              </select>
-            </label>
-            <Button
-              type="submit"
-              variant="outline"
-              className="h-10 border-white/[0.08] bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
-            >
-              تطبيق
-            </Button>
-          </form>
-          {(query || status !== "all") && (
-            <Link
-              href="/"
-              className="inline-flex h-10 items-center rounded-lg px-3 text-sm text-sky-300 transition hover:bg-sky-400/10 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50"
-            >
-              مسح البحث والتصفية
-            </Link>
-          )}
-        </div>
-
-        <Table className="min-w-[720px] text-start">
-          <TableHeader>
-            <TableRow className="border-white/[0.06] hover:bg-transparent">
-              <TableHead className="h-12 px-5 text-start text-xs font-medium text-slate-400 sm:px-6">
-                الصنف
-              </TableHead>
-              <TableHead className="text-start text-xs font-medium text-slate-400">
-                رمز SKU
-              </TableHead>
-              <TableHead className="text-start text-xs font-medium text-slate-400">
-                الوحدة
-              </TableHead>
-              <TableHead className="text-start text-xs font-medium text-slate-400">
-                تصنيف المنتج
-              </TableHead>
-              <TableHead className="text-start text-xs font-medium text-slate-400">
-                الكمية
-              </TableHead>
-              <TableHead className="text-start text-xs font-medium text-slate-400">
-                الحد الأدنى
-              </TableHead>
-              <TableHead className="pe-5 text-start text-xs font-medium text-slate-400 sm:pe-6">
-                الحالة
-              </TableHead>
-              <TableHead className="text-end text-xs font-medium text-slate-400">
-                إجراءات
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {products.length === 0 ? (
-              <TableRow className="border-white/[0.06] hover:bg-transparent">
-                <TableCell
-                  colSpan={8}
-                  className="h-44 px-6 text-center"
-                >
-                  <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
-                    <PackageX
-                      aria-hidden="true"
-                      className="size-8 text-slate-500"
-                    />
-                    <p className="text-sm font-medium text-slate-200">
-                      {query || status !== "all"
-                        ? "لا توجد أصناف تطابق البحث أو التصفية"
-                        : "لا توجد أصناف في المخزون بعد"}
-                    </p>
-                    <p className="text-xs leading-5 text-slate-400">
-                      {query || status !== "all"
-                        ? "جرّب تغيير عبارة البحث أو حالة المخزون."
-                        : "أضف صنفًا جديدًا للبدء في متابعة مخزونك."}
-                    </p>
-                    {(query || status !== "all") && (
-                      <Link
-                        href="/"
-                        className="mt-1 text-xs font-medium text-sky-300 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50"
-                      >
-                        مسح البحث والتصفية
-                      </Link>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              products.map((product) => (
-                <ProductTableRow key={product.id} product={product} />
-              ))
-            )}
-          </TableBody>
-        </Table>
-        <nav
-          aria-label="التنقل بين صفحات الأصناف"
-          className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] px-5 py-4 text-xs text-slate-400 sm:px-6"
-        >
-          <p aria-live="polite">
-            عرض {numberFormatter.format(showingFrom)}–
-            {numberFormatter.format(showingTo)} من{" "}
-            {numberFormatter.format(matchingCount)} صنف
-          </p>
-          <div className="flex items-center gap-2">
-            <span className="px-2">
-              الصفحة {numberFormatter.format(currentPage)} من{" "}
-              {numberFormatter.format(Math.max(totalPages, 1))}
-            </span>
-            {currentPage > 1 ? (
-              <Link
-                href={pageHref(query, status, currentPage - 1)}
-                scroll={false}
-                aria-label="الصفحة السابقة"
-                className="inline-flex h-9 items-center gap-1 rounded-lg border border-white/[0.08] px-3 text-slate-200 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50"
-              >
-                <ChevronRight aria-hidden="true" className="size-4" />
-                السابق
-              </Link>
-            ) : (
-              <span
-                aria-disabled="true"
-                className="inline-flex h-9 items-center gap-1 rounded-lg border border-white/[0.05] px-3 text-slate-600"
-              >
-                <ChevronRight aria-hidden="true" className="size-4" />
-                السابق
-              </span>
-            )}
-            {currentPage < totalPages ? (
-              <Link
-                href={pageHref(query, status, currentPage + 1)}
-                scroll={false}
-                aria-label="الصفحة التالية"
-                className="inline-flex h-9 items-center gap-1 rounded-lg border border-white/[0.08] px-3 text-slate-200 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50"
-              >
-                التالي
-                <ChevronLeft aria-hidden="true" className="size-4" />
-              </Link>
-            ) : (
-              <span
-                aria-disabled="true"
-                className="inline-flex h-9 items-center gap-1 rounded-lg border border-white/[0.05] px-3 text-slate-600"
-              >
-                التالي
-                <ChevronLeft aria-hidden="true" className="size-4" />
-              </span>
-            )}
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/[0.05] px-3 py-1.5 text-[11px] font-medium text-emerald-300">
+            <span className="size-1.5 rounded-full bg-emerald-400" />
+            مؤشرات مباشرة من قاعدة البيانات
           </div>
-        </nav>
+        </div>
       </section>
-      <RecentMovementsCard />
+
+      <SupplyChainOverview
+        stageMetrics={stageMetrics}
+        stageAccess={{
+          suppliers: canReadSuppliers,
+          purchaseOrders: canReadPurchaseOrders,
+          inventory: canReadInventory,
+          production: canReadProduction,
+          sales: canReadSales,
+          distribution: canReadDistribution,
+        }}
+      />
+
+      <div className="space-y-7">
+        {sections.map(({ title, description, icon: Icon, metrics }) => (
+          <section key={title} aria-label={`مؤشرات ${title}`} className="space-y-3.5">
+            <div className="flex items-center gap-3">
+              <div className="grid size-9 shrink-0 place-items-center rounded-xl border border-white/[0.07] bg-slate-900/80 text-sky-300">
+                <Icon aria-hidden="true" className="size-[17px]" />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-semibold text-white">{title}</h3>
+                <p className="mt-0.5 text-xs text-slate-500 sm:text-[13px]">
+                  {description}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {metrics.map((metric) => (
+                <ExecutiveMetricCard key={metric.label} {...metric} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <AlertsCenter alerts={alerts} />
+
+      <RecentActivityTimeline
+        activities={recentActivities}
+        moduleLinks={activityModuleLinks}
+      />
+
+      <AnalyticsSection
+        period={period}
+        modules={analyticsModules}
+        inventorySummary={
+          canReadInventory
+            ? {
+                lowStock: lowStockCount ?? 0,
+                outOfStock: outOfStockCount ?? 0,
+                available: availableCount ?? 0,
+              }
+            : null
+        }
+      />
     </main>
-  );
-}
-
-function ProductTableRow({ product }: { product: WarehouseProduct }) {
-  const productStatus = inventoryStatus(product.quantity, product.minQuantity);
-  const status = {
-    normal: {
-      label: "متوفر",
-      className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
-    },
-    low: {
-      label: "مخزون منخفض",
-      className: "border-amber-400/20 bg-amber-400/10 text-amber-300",
-    },
-    out: {
-      label: "نفد المخزون",
-      className: "border-rose-400/20 bg-rose-400/10 text-rose-300",
-    },
-  }[productStatus];
-
-  return (
-    <TableRow className="border-white/[0.05] text-slate-300 hover:bg-white/[0.025]">
-      <TableCell className="px-5 py-4 sm:px-6">
-        <span className="font-medium text-slate-100">{product.name}</span>
-      </TableCell>
-      <TableCell className="font-mono text-xs text-slate-400" dir="ltr">
-        {product.sku}
-      </TableCell>
-      <TableCell className="text-slate-400">{product.unit}</TableCell>
-      <TableCell className="text-slate-400">
-        {PRODUCT_CLASSIFICATION_LABELS[product.classification]}
-      </TableCell>
-      <TableCell className="font-medium tabular-nums text-slate-200">
-        {numberFormatter.format(product.quantity)}
-      </TableCell>
-      <TableCell className="tabular-nums text-slate-400">
-        {numberFormatter.format(product.minQuantity)}
-      </TableCell>
-      <TableCell className="pe-5 sm:pe-6">
-        <Badge
-          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${status.className}`}
-        >
-          {status.label}
-        </Badge>
-      </TableCell>
-      <TableCell className="text-end">
-        <ProductActions
-          product={{
-            id: product.id,
-            name: product.name,
-            sku: product.sku,
-            unit: product.unit,
-            minQuantity: product.minQuantity,
-            classification: product.classification,
-          }}
-        />
-      </TableCell>
-    </TableRow>
   );
 }

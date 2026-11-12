@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ImdadDZ | إدارة المخازن",
-  description: "لوحة متابعة المخزون وإدارة الأصناف في ImdadDZ.",
+  title: "ImdadDZ | لوحة الإدارة التنفيذية",
+  description: "لوحة الإدارة التنفيذية لمتابعة عمليات سلسلة التوريد في ImdadDZ.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
