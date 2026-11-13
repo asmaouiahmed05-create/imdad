@@ -4,7 +4,13 @@ import { useState } from "react";
 import { Download, FileSpreadsheet, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function ReportExportButtons({ exportUrl }: { exportUrl: string }) {
+export function ReportExportButtons({
+  exportUrl,
+  canExportExcel = true,
+}: {
+  exportUrl: string;
+  canExportExcel?: boolean;
+}) {
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -57,20 +63,22 @@ export function ReportExportButtons({ exportUrl }: { exportUrl: string }) {
 
   return (
     <div className="no-print flex flex-wrap items-center gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        onClick={downloadExcel}
-        disabled={isExporting}
-        className="h-10 border-white/[0.08] bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
-      >
-        {isExporting ? (
-          <Download aria-hidden="true" className="size-4 animate-pulse" />
-        ) : (
-          <FileSpreadsheet aria-hidden="true" className="size-4" />
-        )}
-        {isExporting ? "جارٍ تجهيز Excel..." : "تصدير Excel"}
-      </Button>
+      {canExportExcel && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={downloadExcel}
+          disabled={isExporting}
+          className="h-10 border-white/[0.08] bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
+        >
+          {isExporting ? (
+            <Download aria-hidden="true" className="size-4 animate-pulse" />
+          ) : (
+            <FileSpreadsheet aria-hidden="true" className="size-4" />
+          )}
+          {isExporting ? "جارٍ تجهيز Excel..." : "تصدير Excel"}
+        </Button>
+      )}
       <Button
         type="button"
         variant="outline"

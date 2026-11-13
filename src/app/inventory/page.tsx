@@ -35,7 +35,9 @@ import {
 import { RecordMovementButton } from "@/components/dashboard/RecordMovementButton";
 import { RecentMovementsCard } from "@/components/dashboard/RecentMovementsCard";
 import { requirePagePermission } from "@/lib/authz";
+import { hasPermission } from "@/lib/authorization";
 import { PRODUCT_CLASSIFICATION_LABELS } from "@/lib/production-bom";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
   maximumFractionDigits: 2,
@@ -66,7 +68,7 @@ export default async function Home({
 }: {
   searchParams: SearchParams;
 }) {
-  await requirePagePermission("inventory.read");
+  const principal = await requirePagePermission("inventory.read");
   await connection();
 
   const params = await searchParams;
@@ -167,8 +169,22 @@ export default async function Home({
             بيانات المخزون مباشرة
           </div>
           <div className="flex items-center gap-2">
-            <RecordMovementButton />
-            <AddProductDialog />
+            <ImportExportPanel
+              dataset="products"
+              filters={{
+                ...(query ? { q: query } : {}),
+                ...(status !== "all" ? { status } : {}),
+              }}
+              importDataset={
+                hasPermission(principal.role, "product.create") ? "products" : undefined
+              }
+            />
+            {hasPermission(principal.role, "stock.move") && (
+              <RecordMovementButton />
+            )}
+            {hasPermission(principal.role, "product.create") && (
+              <AddProductDialog />
+            )}
           </div>
         </div>
       </section>
@@ -329,7 +345,12 @@ export default async function Home({
               </TableRow>
             ) : (
               products.map((product) => (
-                <ProductTableRow key={product.id} product={product} />
+                <ProductTableRow
+                  key={product.id}
+                  product={product}
+                  canUpdate={hasPermission(principal.role, "product.update")}
+                  canDelete={hasPermission(principal.role, "product.delete")}
+                />
               ))
             )}
           </TableBody>
@@ -394,7 +415,15 @@ export default async function Home({
   );
 }
 
-function ProductTableRow({ product }: { product: WarehouseProduct }) {
+function ProductTableRow({
+  product,
+  canUpdate,
+  canDelete,
+}: {
+  product: WarehouseProduct;
+  canUpdate: boolean;
+  canDelete: boolean;
+}) {
   const productStatus = inventoryStatus(product.quantity, product.minQuantity);
   const status = {
     normal: {
@@ -446,6 +475,8 @@ function ProductTableRow({ product }: { product: WarehouseProduct }) {
             minQuantity: product.minQuantity,
             classification: product.classification,
           }}
+          canUpdate={canUpdate}
+          canDelete={canDelete}
         />
       </TableCell>
     </TableRow>

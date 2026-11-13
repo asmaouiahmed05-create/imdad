@@ -25,6 +25,8 @@ import { inventoryStatus, inventoryStatusWhere } from "@/lib/inventory-status";
 import { prisma } from "@/lib/db";
 import type { WarehouseProduct } from "@/components/dashboard/types";
 import { requirePagePermission } from "@/lib/authz";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
+import { hasPermission } from "@/lib/authorization";
 
 const PAGE_SIZE = 20;
 const numberFormatter = new Intl.NumberFormat("ar-DZ", {
@@ -71,7 +73,7 @@ export default async function ReportsPage({
 }: {
   searchParams: SearchParams;
 }) {
-  await requirePagePermission("reports.read");
+  const principal = await requirePagePermission("reports.read");
   await connection();
   const filters = parseReportFilters(toSearchParams(await searchParams));
   const productWhere = productReportWhere(filters.report, filters.query);
@@ -159,7 +161,23 @@ export default async function ReportsPage({
             تقارير مبنية على بيانات الأصناف وحركات المخزون المسجلة.
           </p>
         </div>
-        <ReportExportButtons exportUrl={exportUrl} />
+        <div className="flex flex-wrap gap-2">
+          <ImportExportPanel
+            dataset={filters.report === "movements" ? "movements" : "products"}
+            filters={{
+              ...(filters.query ? { q: filters.query } : {}),
+              ...(filters.report === "low-stock" ? { status: "low" } : {}),
+              ...(filters.report === "out-of-stock" ? { status: "out" } : {}),
+              ...(filters.from ? { from: filters.from } : {}),
+              ...(filters.to ? { to: filters.to } : {}),
+            }}
+            showExcel={false}
+          />
+          <ReportExportButtons
+            exportUrl={exportUrl}
+            canExportExcel={hasPermission(principal.role, "reports.export")}
+          />
+        </div>
       </section>
 
       <section

@@ -33,6 +33,7 @@ import {
   createSupplyChainStageMetrics,
   SupplyChainOverview,
 } from "@/components/dashboard/SupplyChainOverview";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 import { getAuthenticatedPrincipal } from "@/lib/authz";
 import { hasPermission } from "@/lib/authorization";
 import { prisma } from "@/lib/db";
@@ -155,6 +156,7 @@ export default async function ExecutiveDashboard({
     principal.role,
     "distribution.read",
   );
+  const canReadReports = hasPermission(principal.role, "reports.read");
 
   if (
     !canReadInventory &&
@@ -1197,9 +1199,12 @@ export default async function ExecutiveDashboard({
               نظرة واضحة على مؤشرات العمليات عبر وحدات سلسلة التوريد.
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/[0.05] px-3 py-1.5 text-[11px] font-medium text-emerald-300">
-            <span className="size-1.5 rounded-full bg-emerald-400" />
-            مؤشرات مباشرة من قاعدة البيانات
+          <div className="flex flex-wrap items-center gap-2">
+            {canReadReports && <ImportExportPanel dataset="executive" />}
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/[0.05] px-3 py-1.5 text-[11px] font-medium text-emerald-300">
+              <span className="size-1.5 rounded-full bg-emerald-400" />
+              مؤشرات مباشرة من قاعدة البيانات
+            </div>
           </div>
         </div>
       </section>

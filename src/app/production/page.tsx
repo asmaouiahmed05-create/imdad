@@ -16,6 +16,7 @@ import { StatCard } from "@/components/dashboard/StatCard";
 import { hasPermission } from "@/lib/authorization";
 import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/db";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 import {
   isProductionOrderStatus,
   PRODUCTION_ORDER_STATUS_CLASSES,
@@ -101,6 +102,13 @@ export default async function ProductionPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ImportExportPanel
+            dataset="production-orders"
+            filters={{
+              ...(query ? { q: query } : {}),
+              ...(status ? { status } : {}),
+            }}
+          />
           <Button variant="outline" render={<Link href="/production/boms" />}>
             قوائم المواد
           </Button>

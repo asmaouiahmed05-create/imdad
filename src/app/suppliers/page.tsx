@@ -25,6 +25,7 @@ import { prisma } from "@/lib/db";
 import { hasPermission } from "@/lib/authorization";
 import { requirePagePermission } from "@/lib/authz";
 import { SupplierStatusControl } from "@/components/purchasing/SupplierStatusControl";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 
 const PAGE_SIZE = 15;
 const numberFormatter = new Intl.NumberFormat("ar-DZ");
@@ -135,6 +136,14 @@ export default async function SuppliersPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ImportExportPanel
+            dataset="suppliers"
+            filters={{
+              ...(query ? { q: query } : {}),
+              ...(active !== "all" ? { active } : {}),
+            }}
+            importDataset={canManage ? "suppliers" : undefined}
+          />
           <Badge variant="outline" className="border-white/10 bg-slate-900 px-3 py-2 text-slate-300">
             {numberFormatter.format(total)} مورد
           </Badge>

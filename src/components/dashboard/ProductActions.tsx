@@ -245,11 +245,21 @@ function DeleteProductDialog({ product }: { product: ProductActionsProduct }) {
   );
 }
 
-export function ProductActions({ product }: { product: ProductActionsProduct }) {
+export function ProductActions({
+  product,
+  canUpdate,
+  canDelete,
+}: {
+  product: ProductActionsProduct;
+  canUpdate: boolean;
+  canDelete: boolean;
+}) {
+  if (!canUpdate && !canDelete) return null;
+
   return (
     <div className="flex items-center justify-end gap-1">
-      <EditProductDialog product={product} />
-      <DeleteProductDialog product={product} />
+      {canUpdate && <EditProductDialog product={product} />}
+      {canDelete && <DeleteProductDialog product={product} />}
     </div>
   );
 }

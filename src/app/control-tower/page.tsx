@@ -16,6 +16,7 @@ import {
 } from "@/lib/delivery-state";
 import { requirePagePermission } from "@/lib/authz";
 import { ControlTowerDashboard } from "@/components/control-tower/ControlTowerDashboard";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 
 export default async function ControlTowerPage() {
   await Promise.all([
@@ -185,8 +186,12 @@ export default async function ControlTowerPage() {
   }
 
   return (
-    <ControlTowerDashboard
-      data={{
+    <>
+      <div className="mx-auto flex w-full max-w-[1600px] justify-end px-4 pt-4 sm:px-6 lg:px-8">
+        <ImportExportPanel dataset="executive" />
+      </div>
+      <ControlTowerDashboard
+        data={{
         inventory: {
           productCount,
           lowStockCount,
@@ -225,7 +230,8 @@ export default async function ControlTowerPage() {
           recentShipments: recentDeliveryShipments,
           delayedShipmentCount,
         },
-      }}
-    />
+        }}
+      />
+    </>
   );
 }

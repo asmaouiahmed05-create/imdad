@@ -208,7 +208,13 @@ export async function GET(request: Request) {
       sheet = worksheet(++sheetIndex);
       dataRowsInSheet = 0;
     }
-    const row = sheet.addRow(values);
+    const row = sheet.addRow(
+      values.map((value) =>
+        typeof value === "string" && /^[\s\uFEFF]*[=+\-@]/u.test(value)
+          ? `'${value}`
+          : value,
+      ),
+    );
     dataRowsInSheet += 1;
     row.alignment = { vertical: "top", horizontal: "right" };
     values.forEach((value, index) => {

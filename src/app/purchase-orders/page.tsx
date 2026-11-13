@@ -15,6 +15,7 @@ import {
 import { prisma } from "@/lib/db";
 import type { PurchaseOrderStatus } from "@/lib/purchase-order-state";
 import { requirePagePermission } from "@/lib/authz";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 
 const PAGE_SIZE = 15;
 const numberFormatter = new Intl.NumberFormat("ar-DZ");
@@ -129,6 +130,13 @@ export default async function PurchaseOrdersPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ImportExportPanel
+            dataset="purchase-orders"
+            filters={{
+              ...(query ? { q: query } : {}),
+              ...(status !== "all" ? { status } : {}),
+            }}
+          />
           <Badge variant="outline" className="border-white/10 bg-slate-900 px-3 py-2 text-slate-300">
             {numberFormatter.format(total)} أمر
           </Badge>

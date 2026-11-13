@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/db";
 import { getAuthenticatedPrincipal } from "@/lib/authz";
 import { hasPermission } from "@/lib/authorization";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 import {
   DELIVERY_PRIORITY_LABELS,
   DELIVERY_RUN_STATUS_LABELS,
@@ -46,7 +47,10 @@ export default async function DeliveryRunsPage() {
           <h1 className="text-xl font-semibold text-white sm:text-2xl">مسارات التوصيل</h1>
           <p className="mt-2 text-sm text-slate-400">خطط التوقفات حسب المنطقة والتاريخ والسائق والمركبة، دون تتبع GPS أو ادعاء تحسين تلقائي للمسار.</p>
         </div>
-        {canManage && <Button render={<Link href="/distribution/runs/new" />}><Plus aria-hidden="true" />تخطيط مسار</Button>}
+        <div className="flex flex-wrap gap-2">
+          <ImportExportPanel dataset="delivery-runs" />
+          {canManage && <Button render={<Link href="/distribution/runs/new" />}><Plus aria-hidden="true" />تخطيط مسار</Button>}
+        </div>
       </section>
       <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-900/75">
         {runs.length === 0 ? (

@@ -14,6 +14,7 @@ import { prisma } from "@/lib/db";
 import { requirePagePermission } from "@/lib/authz";
 import { hasPermission } from "@/lib/authorization";
 import { BOM_STATUS_LABELS } from "@/lib/production-bom";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 
 const statusClasses = {
   DRAFT: "border-slate-400/20 bg-slate-400/10 text-slate-300",
@@ -53,12 +54,15 @@ export default async function BillOfMaterialsPage() {
             أوامر الإنتاج والتحقق من توفر المواد.
           </p>
         </div>
-        {canManage && (
-          <Button render={<Link href="/production/boms/new" />}>
-            <FilePlus2 aria-hidden="true" className="size-4" />
-            قائمة مواد جديدة
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <ImportExportPanel dataset="boms" />
+          {canManage && (
+            <Button render={<Link href="/production/boms/new" />}>
+              <FilePlus2 aria-hidden="true" className="size-4" />
+              قائمة مواد جديدة
+            </Button>
+          )}
+        </div>
       </header>
 
       <section className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-slate-900/75 p-4">

@@ -11,6 +11,7 @@ import {
   DELIVERY_SHIPMENT_STATUS_LABELS,
   isDeliveryShipmentStatus,
 } from "@/lib/delivery-state";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 
 const SHIPMENT_SORT_OPTIONS = [
   "expected_asc",
@@ -99,7 +100,16 @@ export default async function DeliveriesPage({
           <h1 className="text-xl font-semibold text-white sm:text-2xl">الشحنات</h1>
           <p className="mt-2 text-sm text-slate-400">كل شحنة مرتبطة بطلب مكتمل واحد، مع سجل موثّق لكل تحديث.</p>
         </div>
-        {canManage && <Button render={<Link href="/distribution/deliveries/new" />}><Plus aria-hidden="true" />إنشاء شحنة</Button>}
+        <div className="flex flex-wrap gap-2">
+          <ImportExportPanel
+            dataset="deliveries"
+            filters={{
+              ...(query ? { q: query } : {}),
+              ...(status ? { status } : {}),
+            }}
+          />
+          {canManage && <Button render={<Link href="/distribution/deliveries/new" />}><Plus aria-hidden="true" />إنشاء شحنة</Button>}
+        </div>
       </section>
 
       <form className="flex flex-col gap-3 rounded-2xl border border-white/[0.07] bg-slate-900/75 p-4 sm:flex-row">

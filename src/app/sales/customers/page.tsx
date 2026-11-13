@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { hasPermission } from "@/lib/authorization";
 import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/db";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 
 const PAGE_SIZE = 15;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -92,12 +93,19 @@ export default async function SalesCustomersPage({
             بيانات العملاء المرتبطة بطلباتهم المسجلة.
           </p>
         </div>
-        {canManage && (
-          <Button render={<Link href="/sales/customers/new" />}>
-            <Plus aria-hidden="true" />
-            إضافة عميل
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <ImportExportPanel
+            dataset="customers"
+            filters={query ? { q: query } : {}}
+            importDataset={canManage ? "customers" : undefined}
+          />
+          {canManage && (
+            <Button render={<Link href="/sales/customers/new" />}>
+              <Plus aria-hidden="true" />
+              إضافة عميل
+            </Button>
+          )}
+        </div>
       </header>
 
       <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-900/75">

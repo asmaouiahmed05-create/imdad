@@ -8,6 +8,7 @@ import { CustomerOrderStatusBadge } from "@/components/sales/CustomerOrderStatus
 import { hasPermission } from "@/lib/authorization";
 import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/db";
+import { ImportExportPanel } from "@/components/data-transfer/ImportExportPanel";
 import {
   CUSTOMER_ORDER_STATUSES,
   CUSTOMER_ORDER_STATUS_LABELS,
@@ -134,12 +135,21 @@ export default async function SalesOrdersPage({
             ابحث في الطلبات المحفوظة وصفّها حسب الحالة.
           </p>
         </div>
-        {canManage && (
-          <Button render={<Link href="/sales/orders/new" />}>
-            <Plus aria-hidden="true" />
-            طلب جديد
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <ImportExportPanel
+            dataset="customer-orders"
+            filters={{
+              ...(query ? { q: query } : {}),
+              ...(status !== "all" ? { status } : {}),
+            }}
+          />
+          {canManage && (
+            <Button render={<Link href="/sales/orders/new" />}>
+              <Plus aria-hidden="true" />
+              طلب جديد
+            </Button>
+          )}
+        </div>
       </header>
 
       <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-slate-900/75">
